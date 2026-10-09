@@ -45,6 +45,7 @@ self-inflicted. Do not repeat it.
 | Container PHP | 8.3-fpm-alpine (nginx + php-fpm + supervisor in one image) |
 | Docker Compose | v5.1.3, `develop.watch` supported |
 | Compose project name | `omnitrack` -- set by `COMPOSE_PROJECT_NAME` in `.env`, not derived |
+| Git remote | `origin` = `https://github.com/joynard/omnitrack.git`, branch `main` |
 | Built images | `omnitrack-engine:local` and `omnitrack-engine:test`, both present |
 | Containers | `omnitrack-app` (8080) and `omnitrack-db` (5433), both healthy when up |
 | Host disk | C: 30 GB free of 477 GB **-- tight**; D: 1.36 TB free |
@@ -197,18 +198,50 @@ the Koyeb steps and the full production variable list.
 
 Verified gaps as of the initial commit:
 
-1. **No git remote yet.** The repository was initialised locally with two
-   commits, but Koyeb deploys "Create Service -> GitHub", so the deploy path
-   stops until a remote exists and the branch is pushed.
+1. **The git remote exists and `main` is pushed.** `origin` is
+   `https://github.com/joynard/omnitrack.git`, and the initial history is on the
+   remote. A deploy can therefore start; it has not been started.
 2. **The scheduler is not running in production.** `routes/console.php`
    schedules `SyncGoogleSheetJob` hourly, but `docker/supervisord.conf` defines
    only php-fpm, nginx and queue-worker. There is no `schedule:work` program, so
    hourly sheet sync never fires. `README.md` acknowledges this.
-3. **No CI.** The `testing` Dockerfile target exists for exactly this purpose
+3. **The database is never seeded on deploy, so a fresh production instance is
+   unusable.** `docker/entrypoint.sh` runs `migrate --force` and nothing else.
+   `DatabaseSeeder` is the only thing that creates the single login account, the
+   starting categories, the `SheetSource` row and the six `AiPromptTemplate`
+   presets -- so without it there is no account to log in with, and the Ctrl+P
+   command palette is empty. The README's Koyeb section does not mention
+   `db:seed`, nor the `OMNITRACK_USER_*` variables the seeder reads.
+4. **No CI.** The `testing` Dockerfile target exists for exactly this purpose
    but nothing invokes it. Note the suite is currently 16 failing (see above),
    so a naive CI job would be red on arrival.
-4. **Not deployed.** Nothing in this repository has been run with
+5. **Not deployed.** Nothing in this repository has been run with
    `APP_ENV=production`; all verification to date is local-only.
+
+### Deploying: the seeding step the README omits
+
+Required variables for the seeder, none of which appear in the README list:
+
+```
+OMNITRACK_USER_NAME=...
+OMNITRACK_USER_EMAIL=...
+OMNITRACK_USER_PASSWORD=...
+```
+
+Then, once, against the running instance:
+
+```
+php artisan db:seed --force
+```
+
+The seeder is idempotent: `firstOrNew`/`firstOrCreate` everywhere, and it only
+resets the password when `OMNITRACK_USER_PASSWORD` is non-empty. It also deletes
+every account whose email differs from `OMNITRACK_USER_EMAIL` -- intentional for
+a single-user tool, but it means changing that variable locks out the old login.
+
+If `OMNITRACK_USER_PASSWORD` is empty, the seeder still creates the user with a
+random 16-character password and warns on stdout. That account can never be
+logged into, so set the variable before seeding.
 
 Never commit `.env`: it holds the real database password, `DEEPSEEK_API_KEY` and
 `HARNESS_SECRET_TOKEN`. The first commit was audited and contains none of them,
