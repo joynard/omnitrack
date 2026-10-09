@@ -187,6 +187,35 @@ green.
   containers unless "Show stopped containers" is enabled, so a stopped
   `omnitrack-app` is invisible in both places.
 
+## Production readiness -- what is and is not wired up
+
+The runtime image is production-shaped: multi-stage `Dockerfile` with a frozen
+`runtime` target, production OPcache in `docker/php.ini`, nginx + php-fpm +
+queue-worker under supervisor, migrations-with-retry in `docker/entrypoint.sh`,
+and an unauthenticated `GET /up` health check for Koyeb. `README.md` documents
+the Koyeb steps and the full production variable list.
+
+Verified gaps as of the initial commit:
+
+1. **No git remote yet.** The repository was initialised locally with two
+   commits, but Koyeb deploys "Create Service -> GitHub", so the deploy path
+   stops until a remote exists and the branch is pushed.
+2. **The scheduler is not running in production.** `routes/console.php`
+   schedules `SyncGoogleSheetJob` hourly, but `docker/supervisord.conf` defines
+   only php-fpm, nginx and queue-worker. There is no `schedule:work` program, so
+   hourly sheet sync never fires. `README.md` acknowledges this.
+3. **No CI.** The `testing` Dockerfile target exists for exactly this purpose
+   but nothing invokes it. Note the suite is currently 16 failing (see above),
+   so a naive CI job would be red on arrival.
+4. **Not deployed.** Nothing in this repository has been run with
+   `APP_ENV=production`; all verification to date is local-only.
+
+Never commit `.env`: it holds the real database password, `DEEPSEEK_API_KEY` and
+`HARNESS_SECRET_TOKEN`. The first commit was audited and contains none of them,
+and `.gitignore` covers `.env`, `.env.backup`, `.env.production`, `auth.json`
+and `storage/app/google/*.json`. Re-audit with `git ls-files` after adding any
+new configuration file.
+
 ## Conventions
 
 - Match the existing comment density. Every non-obvious decision in `Dockerfile`,
