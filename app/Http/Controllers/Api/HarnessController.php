@@ -7,6 +7,7 @@ use App\Jobs\SyncGoogleSheetJob;
 use App\Models\Category;
 use App\Models\Project;
 use App\Models\ProjectModule;
+use App\Models\SheetSource;
 use App\Models\Task;
 use App\Services\AiOrchestrator;
 use App\Services\GoogleSheetService;
@@ -42,7 +43,7 @@ class HarnessController extends Controller
         $snapshot['sync'] = [
             'google_credentials_present' => $this->sheets->credentialsPresent(),
             'credentials_path' => $this->sheets->credentialsPath(),
-            'last_synced_at' => \App\Models\SheetSource::query()->max('last_synced_at'),
+            'last_synced_at' => SheetSource::query()->max('last_synced_at'),
         ];
 
         return response()->json($snapshot);
@@ -104,6 +105,7 @@ class HarnessController extends Controller
         return $this->tool('create_category', $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'color' => ['nullable', 'string', 'max:32'],
+            'order_index' => ['nullable', 'integer'],
         ]), 201);
     }
 
@@ -121,6 +123,19 @@ class HarnessController extends Controller
         $arguments['new_name'] ??= $arguments['name'] ?? null;
 
         return $this->tool('update_category', $arguments);
+    }
+
+    /**
+     * POST /api/harness/categories/reorder
+     */
+    public function reorderCategories(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'category_ids' => ['required', 'array', 'min:1'],
+            'category_ids.*' => ['string'],
+        ]);
+
+        return $this->tool('reorder_categories', ['category_ids' => $validated['category_ids']]);
     }
 
     public function destroyCategory(Category $category): JsonResponse
@@ -203,21 +218,10 @@ class HarnessController extends Controller
             'project_ids.*' => ['string'],
         ]);
 
-        $existing = Project::pluck('id')->all();
-        $map = [];
-        $position = 0;
-
-        foreach (array_values($validated['project_ids']) as $id) {
-            if (! in_array((string) $id, $existing, true)) {
-                continue;
-            }
-
-            $map[(string) $id] = $position++;
-        }
-
-        Project::reorderByIds($map);
-
-        return response()->json(['status' => 'success', 'reordered' => count($map)]);
+        // Through the tool layer like every other mutation. It used to duplicate
+        // the skip-unknown-and-close-gaps logic inline, which meant the ordering
+        // algorithm had two implementations that could drift apart.
+        return $this->tool('reorder_projects', ['project_ids' => $validated['project_ids']]);
     }
 
     // --------------------------------------------------------------- modules
@@ -239,7 +243,17 @@ class HarnessController extends Controller
         ]);
 
         if ($validated['replace_existing'] ?? false) {
-            $project->modules()->delete();
+            // Routed through the tool layer rather than a raw
+            // `$project->modules()->delete()`, so clearing a project's modules
+            // has exactly one implementation and shows up as a tool call.
+            $cleared = $this->tool('delete_module', [
+                'all' => true,
+                'where' => ['project_id' => $project->id],
+            ]);
+
+            if ($cleared->getStatusCode() !== 200) {
+                return $cleared;
+            }
         }
 
         return $this->tool('create_module', [
@@ -378,7 +392,150 @@ class HarnessController extends Controller
         ]);
     }
 
+    // --------------------------------------------------------------- bulk ops
+
+    /*
+     * WHY these endpoints exist next to the single-row ones: the tools already
+     * accept a target selector (ids > `all` + `where` > single id), so a caller
+     * without an LLM in front of it needs a transport for the same vocabulary.
+     * Each method below only validates and forwards -- the selection rule itself
+     * lives in AiOrchestrator::resolveTargets(), so there is exactly one
+     * implementation of "which rows does this touch".
+     */
+
+    public function bulkCategories(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'category_id' => ['nullable', 'string'],
+            'category_ids' => ['nullable', 'array'],
+            'category_ids.*' => ['string'],
+            'name' => ['nullable', 'string', 'max:255'],
+            'all' => ['nullable', 'boolean'],
+            'confirm' => ['nullable', 'boolean'],
+        ]);
+
+        return $this->tool('delete_category', $this->bulkArguments($validated, [
+            'category_id', 'category_ids', 'name',
+        ]));
+    }
+
+    public function bulkProjects(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'action' => ['required', 'string', 'in:update,delete'],
+            'project_id' => ['nullable', 'string'],
+            'project_ids' => ['nullable', 'array'],
+            'project_ids.*' => ['string'],
+            'all' => ['nullable', 'boolean'],
+            'where' => ['nullable', 'array'],
+            'where.category_id' => ['nullable', 'string'],
+            'where.status' => ['nullable', 'string'],
+            'confirm' => ['nullable', 'boolean'],
+            'name' => ['nullable', 'string', 'max:255'],
+            'category_id' => ['nullable', 'string', 'exists:categories,id'],
+            'category_name' => ['nullable', 'string', 'max:255'],
+            'my_role' => ['nullable', 'string', 'max:255'],
+            'department' => ['nullable', 'string', 'max:255'],
+            'target_user' => ['nullable', 'string', 'max:255'],
+            'project_owner' => ['nullable', 'string', 'max:255'],
+            'description' => ['nullable', 'string'],
+            'status' => ['nullable', 'string'],
+            'doc_link' => ['nullable', 'string', 'max:2048'],
+            'order_index' => ['nullable', 'integer'],
+        ]);
+
+        return $this->tool(
+            $validated['action'] === 'update' ? 'update_project' : 'delete_project',
+            $this->bulkArguments($validated, [
+                'project_id', 'project_ids', 'name', 'category_id', 'category_name', 'my_role',
+                'department', 'target_user', 'project_owner', 'description', 'status',
+                'doc_link', 'order_index',
+            ]),
+        );
+    }
+
+    public function bulkModules(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'action' => ['required', 'string', 'in:update,delete'],
+            'module_id' => ['nullable', 'string'],
+            'module_ids' => ['nullable', 'array'],
+            'module_ids.*' => ['string'],
+            'all' => ['nullable', 'boolean'],
+            'where' => ['nullable', 'array'],
+            'where.project_id' => ['nullable', 'string'],
+            'where.status' => ['nullable', 'string'],
+            'where.priority' => ['nullable', 'string'],
+            'confirm' => ['nullable', 'boolean'],
+            'title' => ['nullable', 'string', 'max:255'],
+            'description' => ['nullable', 'string'],
+            'status' => ['nullable', 'string'],
+            'priority' => ['nullable', 'string'],
+            'due_date' => ['nullable', 'date'],
+            'due_date_shift_days' => ['nullable', 'integer'],
+            'move_to_project_id' => ['nullable', 'string', 'exists:projects,id'],
+        ]);
+
+        return $this->tool(
+            $validated['action'] === 'update' ? 'update_module' : 'delete_module',
+            $this->bulkArguments($validated, [
+                'module_id', 'module_ids', 'title', 'description', 'status', 'priority',
+                'due_date', 'due_date_shift_days', 'move_to_project_id',
+            ]),
+        );
+    }
+
+    public function bulkTasks(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'action' => ['required', 'string', 'in:update,delete'],
+            'task_id' => ['nullable', 'string'],
+            'task_ids' => ['nullable', 'array'],
+            'task_ids.*' => ['string'],
+            'all' => ['nullable', 'boolean'],
+            'where' => ['nullable', 'array'],
+            'where.status' => ['nullable', 'string'],
+            'where.priority' => ['nullable', 'string'],
+            'confirm' => ['nullable', 'boolean'],
+            'title' => ['nullable', 'string', 'max:255'],
+            'notes' => ['nullable', 'string'],
+            'status' => ['nullable', 'string'],
+            'priority' => ['nullable', 'string'],
+            'due_date' => ['nullable', 'date'],
+            'due_date_shift_days' => ['nullable', 'integer'],
+        ]);
+
+        return $this->tool(
+            $validated['action'] === 'update' ? 'update_task' : 'delete_task',
+            $this->bulkArguments($validated, [
+                'task_id', 'task_ids', 'title', 'notes', 'status', 'priority',
+                'due_date', 'due_date_shift_days',
+            ]),
+        );
+    }
+
     // --------------------------------------------------------------- helpers
+
+    /**
+     * Forward the fields a caller actually sent, so a tool's own defaults are
+     * never overwritten with a null the request merely omitted.
+     *
+     * @param  array<string, mixed>  $validated
+     * @param  list<string>  $fields
+     * @return array<string, mixed>
+     */
+    private function bulkArguments(array $validated, array $fields): array
+    {
+        $arguments = [];
+
+        foreach (array_merge($fields, ['all', 'where', 'confirm']) as $field) {
+            if (array_key_exists($field, $validated) && $validated[$field] !== null) {
+                $arguments[$field] = $validated[$field];
+            }
+        }
+
+        return $arguments;
+    }
 
     /**
      * Run a tool and shape the HTTP response.

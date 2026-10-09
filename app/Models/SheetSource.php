@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Database\Factories\SheetSourceFactory;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -9,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class SheetSource extends Model
 {
-    /** @use HasFactory<\Database\Factories\SheetSourceFactory> */
+    /** @use HasFactory<SheetSourceFactory> */
     use HasFactory, HasUlids;
 
     protected $fillable = [

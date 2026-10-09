@@ -18,6 +18,7 @@
 #   logs      Follow logs (logs [service])
 #   ps        Show containers and health
 #   sh        Interactive shell in the app container
+#   telegram  Run the Telegram long-poll bot in the foreground
 #   fresh     migrate:fresh --seed
 #   config    Validate and print the merged compose config
 #
@@ -75,7 +76,11 @@ case "$cmd" in
     build)   dc_run build "$@" ;;
     down)    dc_test down "$@" ;;
     restart) dc_test down; dc_run up -d ;;
-    test)    dc_test run --rm --pull never test "$@" ;;
+    # `docker compose run` REPLACES the service command rather than appending to
+    # it, so the full `php artisan test` is spelled out to make
+    # `dev.sh test --filter=Foo` pass the filter through instead of trying to
+    # exec a binary named "--filter=Foo".
+    test)    dc_test run --rm --pull never test php artisan test "$@" ;;
     artisan) dc_test exec app php artisan "$@" ;;
     tinker)  dc_test exec app php artisan tinker ;;
     composer) dc_tools run --rm composer "$@" ;;
@@ -83,6 +88,11 @@ case "$cmd" in
     logs)    dc_run logs -f --tail=100 "${1:-app}" ;;
     ps)      dc_test ps ;;
     sh)      dc_test exec app sh ;;
+    # Attach to the poller in the foreground. `up` (not `run`) keeps it under
+    # Compose, so there is still exactly ONE poller -- `run` would start a second
+    # container and Telegram would answer 409 to one of them. No profile here,
+    # for the same reason `up` never passes one: it would start `test` as well.
+    telegram) dc_run up telegram "$@" ;;
     fresh)   dc_test exec app php artisan migrate:fresh --seed ;;
     config)  dc_run config ;;
 

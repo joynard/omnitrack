@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\ItemPriority;
+use App\Enums\ItemStatus;
 use App\Jobs\SyncGoogleSheetJob;
 use App\Models\Category;
 use App\Models\Project;
@@ -11,6 +13,8 @@ use App\Services\AiOrchestrator;
 use App\Services\GoogleSheetService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 /**
  * JSON endpoints that hydrate the Blade board without a JS build step.
@@ -51,7 +55,7 @@ class BoardController extends Controller
                 'doc_link' => $project->doc_link,
                 'progress' => $project->progress(),
                 'modules_count' => $project->modules_count,
-                'modules_done' => $project->modules->where('status', \App\Enums\ItemStatus::DONE)->count(),
+                'modules_done' => $project->modules->where('status', ItemStatus::DONE)->count(),
                 'sheet_row_index' => $project->sheet_row_index,
                 'order_index' => $project->order_index,
                 'updated_at' => $project->updated_at?->toIso8601String(),
@@ -94,7 +98,7 @@ class BoardController extends Controller
         $name = trim($validated['name']);
 
         $category = Category::firstOrCreate(
-            ['slug' => \Illuminate\Support\Str::slug($name)],
+            ['slug' => Str::slug($name)],
             [
                 'name' => $name,
                 'color' => $validated['color'] ?? 'neutral',
@@ -118,7 +122,7 @@ class BoardController extends Controller
 
         if (filled($validated['name'] ?? null)) {
             $category->name = trim($validated['name']);
-            $category->slug = \Illuminate\Support\Str::slug($category->name);
+            $category->slug = Str::slug($category->name);
         }
 
         if (filled($validated['color'] ?? null)) {
@@ -183,7 +187,7 @@ class BoardController extends Controller
         }
 
         if (filled($validated['status'] ?? null)) {
-            $attributes['status'] = \App\Enums\ItemStatus::normalize($validated['status'])->value;
+            $attributes['status'] = ItemStatus::normalize($validated['status'])->value;
         }
 
         if (array_key_exists('order_index', $validated) && $validated['order_index'] !== null) {
@@ -211,7 +215,7 @@ class BoardController extends Controller
         $existing = Project::pluck('id')->all();
         $applied = 0;
 
-        \Illuminate\Support\Facades\DB::transaction(function () use ($validated, $existing, &$applied): void {
+        DB::transaction(function () use ($validated, $existing, &$applied): void {
             foreach (array_values($validated['project_ids']) as $position => $id) {
                 if (! in_array((string) $id, $existing, true)) {
                     continue;
@@ -393,7 +397,7 @@ class BoardController extends Controller
             'doc_link' => ['nullable', 'string', 'max:2048'],
         ]);
 
-        $validated['status'] = \App\Enums\ItemStatus::normalize($validated['status'] ?? null)->value;
+        $validated['status'] = ItemStatus::normalize($validated['status'] ?? null)->value;
         $validated['order_index'] = (int) (Project::max('order_index') ?? -1) + 1;
 
         $project = Project::create($validated);
@@ -418,8 +422,8 @@ class BoardController extends Controller
             'project_id' => $project->id,
             'title' => $validated['title'],
             'description' => $validated['description'] ?? null,
-            'status' => \App\Enums\ItemStatus::normalize($validated['status'] ?? null)->value,
-            'priority' => \App\Enums\ItemPriority::normalize($validated['priority'] ?? null)->value,
+            'status' => ItemStatus::normalize($validated['status'] ?? null)->value,
+            'priority' => ItemPriority::normalize($validated['priority'] ?? null)->value,
             'due_date' => $validated['due_date'] ?? null,
             'order_index' => (int) ($project->modules()->max('order_index') ?? -1) + 1,
         ]);
@@ -446,7 +450,7 @@ class BoardController extends Controller
         $attributes = [];
 
         if (array_key_exists('status', $validated) && $validated['status'] !== null) {
-            $attributes['status'] = \App\Enums\ItemStatus::normalize($validated['status'])->value;
+            $attributes['status'] = ItemStatus::normalize($validated['status'])->value;
         }
 
         if (filled($validated['title'] ?? null)) {
@@ -458,7 +462,7 @@ class BoardController extends Controller
         }
 
         if (filled($validated['priority'] ?? null)) {
-            $attributes['priority'] = \App\Enums\ItemPriority::normalize($validated['priority'])->value;
+            $attributes['priority'] = ItemPriority::normalize($validated['priority'])->value;
         }
 
         if (array_key_exists('due_date', $validated)) {
@@ -553,8 +557,8 @@ class BoardController extends Controller
         $task = Task::create([
             'title' => $validated['title'],
             'notes' => $validated['notes'] ?? null,
-            'status' => \App\Enums\ItemStatus::normalize($validated['status'] ?? null)->value,
-            'priority' => \App\Enums\ItemPriority::normalize($validated['priority'] ?? null)->value,
+            'status' => ItemStatus::normalize($validated['status'] ?? null)->value,
+            'priority' => ItemPriority::normalize($validated['priority'] ?? null)->value,
             'due_date' => $validated['due_date'] ?? null,
             'order_index' => (int) (Task::max('order_index') ?? -1) + 1,
         ]);
@@ -589,11 +593,11 @@ class BoardController extends Controller
         }
 
         if (array_key_exists('status', $validated) && $validated['status'] !== null) {
-            $attributes['status'] = \App\Enums\ItemStatus::normalize($validated['status'])->value;
+            $attributes['status'] = ItemStatus::normalize($validated['status'])->value;
         }
 
         if (! empty($validated['priority'])) {
-            $attributes['priority'] = \App\Enums\ItemPriority::normalize($validated['priority'])->value;
+            $attributes['priority'] = ItemPriority::normalize($validated['priority'])->value;
         }
 
         if (array_key_exists('due_date', $validated)) {

@@ -8,6 +8,24 @@
 # from the host .env via env_file, so editing .env and recreating the container
 # is enough — no rebuild, and platform secrets always win in production.
 
+# WHY an anchor instead of repeating the block: the app and the Telegram poller
+# must point at exactly the same database and environment. A YAML anchor is the
+# only sharing mechanism available *within* one Compose file -- an `x-` extension
+# block cannot be referenced from docker-compose.dev.yml -- and hand-copied
+# environment is how the two silently drift onto different databases.
+x-compose-environment: &compose-environment
+    # These win over .env, so the container always talks to the compose
+    # database regardless of what the host .env holds for local PHP use.
+    DB_CONNECTION: pgsql
+    DB_HOST: db
+    DB_PORT: "5432"
+    DB_DATABASE: omnitrack
+    DB_USERNAME: omnitrack
+    DB_PASSWORD: secret
+    DB_SSLMODE: prefer
+    APP_ENV: local
+    LOG_CHANNEL: stderr
+
 services:
     app:
         build:
@@ -19,18 +37,7 @@ services:
         env_file:
             - path: .env
               required: false
-        environment:
-            # These win over .env, so the container always talks to the compose
-            # database regardless of what the host .env holds for local PHP use.
-            DB_CONNECTION: pgsql
-            DB_HOST: db
-            DB_PORT: "5432"
-            DB_DATABASE: omnitrack
-            DB_USERNAME: omnitrack
-            DB_PASSWORD: secret
-            DB_SSLMODE: prefer
-            APP_ENV: local
-            LOG_CHANNEL: stderr
+        environment: *compose-environment
         ports:
             - "8080:8080"
         volumes:
@@ -46,6 +53,41 @@ services:
             timeout: 5s
             retries: 5
             start_period: 40s
+
+    # -------------------------------------------------------------------------
+    # Telegram bot: long-polls Telegram so the workspace can be driven from a
+    # phone. It reuses the image `app` already built, so adding or changing the
+    # bot never costs a rebuild.
+    #
+    # WHY a Compose service and not a fourth Supervisor program: a new program
+    # only exists after `docker compose build`, which is exactly the multi-minute
+    # path this stack is arranged to avoid, and it cannot be restarted on its own.
+    #
+    # WHY restart: on-failure and NOT unless-stopped: with no
+    # TELEGRAM_BOT_TOKEN the command deliberately exits 0, and `always` /
+    # `unless-stopped` restart a container whatever its exit code -- which would
+    # hot-loop forever. `on-failure` restarts a genuine crash (exit 1) and leaves
+    # an intentional clean stop alone. Supervisord has the same semantics, which
+    # is why `telegram:poll` returns 0 when it has no token.
+    # -------------------------------------------------------------------------
+    telegram:
+        image: omnitrack-engine:local
+        container_name: omnitrack-telegram
+        restart: on-failure
+        env_file:
+            - path: .env
+              required: false
+        environment: *compose-environment
+        # Migrations must have completed before the poller reads telegram_messages.
+        depends_on:
+            app:
+                condition: service_healthy
+        # No entrypoint: this container runs the poller directly, so it never
+        # re-runs migrations or starts a second nginx/supervisord alongside app.
+        command: ["php", "artisan", "telegram:poll"]
+        # Unprivileged, so anything it writes into storage is owned by www-data
+        # and stays readable by php-fpm in the app container.
+        user: www-data
 
     db:
         image: postgres:17-alpine

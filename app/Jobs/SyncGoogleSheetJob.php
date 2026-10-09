@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Models\SheetSource;
 use App\Services\GoogleSheetService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -35,7 +36,7 @@ class SyncGoogleSheetJob implements ShouldQueue
     public function handle(GoogleSheetService $sheets): void
     {
         $source = $this->sheetSourceId !== null
-            ? \App\Models\SheetSource::find($this->sheetSourceId)
+            ? SheetSource::find($this->sheetSourceId)
             : null;
 
         $result = $sheets->sync($source);

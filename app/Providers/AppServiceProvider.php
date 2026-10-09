@@ -5,6 +5,8 @@ namespace App\Providers;
 use App\Services\AiOrchestrator;
 use App\Services\DeepSeekService;
 use App\Services\GoogleSheetService;
+use App\Services\TelegramBot;
+use App\Services\TelegramService;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 
@@ -16,6 +18,8 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(GoogleSheetService::class);
         $this->app->singleton(DeepSeekService::class);
         $this->app->singleton(AiOrchestrator::class);
+        $this->app->singleton(TelegramService::class);
+        $this->app->singleton(TelegramBot::class);
     }
 
     public function boot(): void

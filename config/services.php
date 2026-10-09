@@ -29,6 +29,33 @@ return [
         'timeout' => (int) env('DEEPSEEK_TIMEOUT', 60),
     ],
 
+    'telegram' => [
+        // Token from @BotFather. Empty disables the whole module: the poller
+        // exits cleanly instead of crash-looping, so a fresh clone needs no bot
+        // to boot.
+        'bot_token' => env('TELEGRAM_BOT_TOKEN'),
+
+        // Chat ids allowed to drive the workspace. This module can create and
+        // DELETE projects, modules and tasks, so the check fails closed: an
+        // empty list serves nobody rather than everybody. A chat id is learned
+        // by sending /start to the bot while this list is still empty.
+        'allowed_chat_ids' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) env('TELEGRAM_ALLOWED_CHAT_IDS', '')),
+        ), fn (string $id) => $id !== '')),
+
+        'base_url' => env('TELEGRAM_BASE_URL', 'https://api.telegram.org'),
+
+        // Seconds Telegram holds an idle long poll open. Keep the HTTP request
+        // timeout comfortably above it or every empty poll looks like a failure.
+        'poll_timeout' => (int) env('TELEGRAM_POLL_TIMEOUT', 25),
+        'request_timeout' => (int) env('TELEGRAM_REQUEST_TIMEOUT', 45),
+
+        // Telegram hard-rejects any body above 4096 characters. Staying under
+        // it leaves room for the split marker and any entity overhead.
+        'max_message_length' => 4000,
+    ],
+
     'harness' => [
         'token' => env('HARNESS_SECRET_TOKEN'),
     ],

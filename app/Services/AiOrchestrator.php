@@ -11,6 +11,9 @@ use App\Models\Category;
 use App\Models\Project;
 use App\Models\ProjectModule;
 use App\Models\Task;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -146,9 +149,11 @@ class AiOrchestrator
         return match ($name) {
             'create_category' => $this->toolCreateCategory($arguments),
             'update_category' => $this->toolUpdateCategory($arguments),
+            'reorder_categories' => $this->toolReorderCategories($arguments),
             'delete_category' => $this->toolDeleteCategory($arguments),
             'create_project' => $this->toolCreateProject($arguments),
             'update_project' => $this->toolUpdateProject($arguments),
+            'reorder_projects' => $this->toolReorderProjects($arguments),
             'delete_project' => $this->toolDeleteProject($arguments),
             'create_module' => $this->toolCreateModule($arguments),
             'update_module' => $this->toolUpdateModule($arguments),
@@ -168,10 +173,31 @@ class AiOrchestrator
     {
         $name = $this->requireString($arguments, 'name');
 
+        $color = filled($arguments['color'] ?? null) ? trim((string) $arguments['color']) : null;
+
         $category = Category::firstOrCreate(
             ['slug' => Str::slug($name)],
-            ['name' => $name, 'order_index' => (int) (Category::max('order_index') ?? -1) + 1]
+            array_filter([
+                'name' => $name,
+                // WHY the colour is omitted rather than set to null:
+                // `categories.color` is NOT NULL with a default of "neutral", and
+                // an explicit NULL is a constraint violation on every engine --
+                // omitting the column is what lets the default win.
+                'color' => $color,
+                'order_index' => array_key_exists('order_index', $arguments) && $arguments['order_index'] !== null
+                    ? (int) $arguments['order_index']
+                    : (int) (Category::max('order_index') ?? -1) + 1,
+            ], fn ($value) => $value !== null)
         );
+
+        // The harness API accepts `color` on create, and dropping it silently for
+        // an existing category is the "it looked like it worked" failure mode that
+        // is worse than refusing the call outright. On this endpoint the meaning
+        // is therefore "make sure this category is this colour".
+        if (! $category->wasRecentlyCreated && $color !== null && $category->color !== $color) {
+            $category->color = $color;
+            $category->save();
+        }
 
         return [
             'message' => 'Kategori "'.$category->name.'" '.($category->wasRecentlyCreated ? 'dibuat' : 'sudah ada').'.',
@@ -181,12 +207,20 @@ class AiOrchestrator
 
     private function toolUpdateCategory(array $arguments): array
     {
-        $category = $this->resolveCategory($arguments);
+        $category = $this->resolveCategoryRow($arguments);
+
+        if (! $category) {
+            throw new RuntimeException('Kategori tidak ditemukan. Sebutkan category_id atau nama kategorinya di `name`.');
+        }
 
         if (filled($arguments['new_name'] ?? null)) {
             $newName = trim((string) $arguments['new_name']);
             $category->name = $newName;
             $category->slug = Str::slug($newName);
+        }
+
+        if (array_key_exists('color', $arguments) && $arguments['color'] !== null) {
+            $category->color = trim((string) $arguments['color']);
         }
 
         if (array_key_exists('order_index', $arguments) && $arguments['order_index'] !== null) {
@@ -201,19 +235,58 @@ class AiOrchestrator
         ];
     }
 
-    private function toolDeleteCategory(array $arguments): array
+    private function toolReorderCategories(array $arguments): array
     {
-        $category = $this->resolveCategory($arguments);
-        $name = $category->name;
-        $affected = $category->projects()->count();
+        $ids = $arguments['category_ids'] ?? null;
 
-        // nullOnDelete on the FK keeps the projects; they just lose the label.
-        $category->delete();
+        if (! is_array($ids) || $ids === []) {
+            throw new RuntimeException('category_ids kosong.');
+        }
+
+        $existing = Category::pluck('id')->all();
+        $map = [];
+        $position = 0;
+
+        foreach (array_values($ids) as $id) {
+            if (! in_array((string) $id, $existing, true)) {
+                continue;
+            }
+
+            $map[(string) $id] = $position++;
+        }
+
+        if ($map === []) {
+            throw new RuntimeException('Tidak ada category_id yang cocok dengan kategori di workspace.');
+        }
+
+        Category::reorderByIds($map);
 
         return [
-            'message' => 'Kategori "'.$name.'" dihapus.'
-                .($affected > 0 ? ' '.$affected.' project menjadi tanpa kategori.' : ''),
-            'data' => ['deleted_category' => $name, 'unfiled_projects' => $affected],
+            'message' => 'Urutan '.count($map).' kategori diperbarui.',
+            'data' => ['reordered' => count($map)],
+        ];
+    }
+
+    private function toolDeleteCategory(array $arguments): array
+    {
+        $categories = $this->categoryTargets($arguments);
+        $names = $categories->pluck('name')->all();
+        $unfiled = Project::query()->whereIn('category_id', $categories->modelKeys())->count();
+
+        // nullOnDelete on the FK keeps the projects; they just lose the label.
+        Category::query()->whereIn('id', $categories->modelKeys())->delete();
+
+        $message = count($names) === 1
+            ? 'Kategori "'.$names[0].'" dihapus.'
+            : count($names).' kategori dihapus ('.implode(', ', array_slice($names, 0, 5))
+                .(count($names) > 5 ? ', …' : '').').';
+
+        return [
+            'message' => $message
+                .($unfiled > 0 ? ' '.$unfiled.' project menjadi tanpa kategori.' : ''),
+            'data' => count($names) === 1
+                ? ['deleted_category' => $names[0], 'deleted_categories' => $names, 'unfiled_projects' => $unfiled]
+                : ['deleted_categories' => $names, 'unfiled_projects' => $unfiled],
         ];
     }
 
@@ -245,7 +318,15 @@ class AiOrchestrator
 
     private function toolUpdateProject(array $arguments): array
     {
-        $project = $this->resolveProject($arguments);
+        $projects = $this->resolveTargets(
+            $arguments,
+            Project::query(),
+            'project_id',
+            'project_ids',
+            'project',
+            ['category_id', 'status'],
+        );
+
         $attributes = $this->projectAttributes($arguments);
 
         if (filled($arguments['name'] ?? null)) {
@@ -260,27 +341,88 @@ class AiOrchestrator
             $attributes['order_index'] = (int) $arguments['order_index'];
         }
 
-        $project->fill($attributes)->save();
+        if ($attributes === []) {
+            throw new RuntimeException('Tidak ada perubahan yang diminta.');
+        }
+
+        Project::query()->whereIn('id', $projects->modelKeys())->update($attributes);
+
+        // The single-project path keeps its original response shape so existing
+        // callers see no difference; only the multi-row case gets a new one.
+        if ($projects->count() === 1) {
+            $project = $projects->first()->fresh('category');
+
+            return [
+                'message' => 'Project "'.$project->name.'" diperbarui.',
+                'data' => ['project' => $this->projectPayload($project)],
+            ];
+        }
 
         return [
-            'message' => 'Project "'.$project->name.'" diperbarui.',
-            'data' => ['project' => $this->projectPayload($project->fresh('category'))],
+            'message' => $projects->count().' project diperbarui ('.implode(', ', array_keys($attributes)).').',
+            'data' => ['updated_projects' => $projects->count(), 'attributes' => $attributes],
+        ];
+    }
+
+    private function toolReorderProjects(array $arguments): array
+    {
+        $ids = $arguments['project_ids'] ?? null;
+
+        if (! is_array($ids) || $ids === []) {
+            throw new RuntimeException('project_ids kosong.');
+        }
+
+        $existing = Project::pluck('id')->all();
+        $map = [];
+        $position = 0;
+
+        foreach (array_values($ids) as $id) {
+            if (! in_array((string) $id, $existing, true)) {
+                continue;
+            }
+
+            $map[(string) $id] = $position++;
+        }
+
+        if ($map === []) {
+            throw new RuntimeException('Tidak ada project_id yang cocok dengan project di workspace.');
+        }
+
+        Project::reorderByIds($map);
+
+        return [
+            'message' => 'Urutan '.count($map).' project diperbarui.',
+            'data' => ['reordered' => count($map)],
         ];
     }
 
     private function toolDeleteProject(array $arguments): array
     {
-        $project = $this->resolveProject($arguments);
-        $name = $project->name;
-        $modules = $project->modules()->count();
+        $projects = $this->resolveTargets(
+            $arguments,
+            Project::query(),
+            'project_id',
+            'project_ids',
+            'project',
+            ['category_id', 'status'],
+        );
 
-        // Modules go with it via cascadeOnDelete on the FK.
-        $project->delete();
+        $names = $projects->pluck('name')->all();
+        $modules = ProjectModule::query()->whereIn('project_id', $projects->modelKeys())->count();
+
+        // Modules go with them via cascadeOnDelete on the FK.
+        $deleted = Project::query()->whereIn('id', $projects->modelKeys())->delete();
+
+        $message = count($names) === 1
+            ? 'Project "'.$names[0].'" dihapus'
+            : $deleted.' project dihapus ('.implode(', ', array_slice($names, 0, 5))
+                .(count($names) > 5 ? ', …' : '').')';
 
         return [
-            'message' => 'Project "'.$name.'" dihapus'
-                .($modules > 0 ? ' beserta '.$modules.' modulnya' : '').'.',
-            'data' => ['deleted_project' => $name],
+            'message' => $message.($modules > 0 ? ' beserta '.$modules.' modulnya' : '').'.',
+            'data' => count($names) === 1
+                ? ['deleted_project' => $names[0], 'deleted_projects' => $names, 'deleted_modules' => $modules]
+                : ['deleted_projects' => $names, 'deleted_modules' => $modules],
         ];
     }
 
@@ -328,7 +470,15 @@ class AiOrchestrator
 
     private function toolUpdateModule(array $arguments): array
     {
-        $module = $this->resolveModule($arguments);
+        $modules = $this->resolveTargets(
+            $arguments,
+            ProjectModule::query(),
+            'module_id',
+            'module_ids',
+            'modul',
+            ['project_id', 'status', 'priority'],
+        );
+
         $attributes = [];
 
         foreach (['title', 'description'] as $field) {
@@ -346,26 +496,118 @@ class AiOrchestrator
         }
 
         if (array_key_exists('due_date', $arguments)) {
+            if (array_key_exists('due_date_shift_days', $arguments)) {
+                throw new RuntimeException('Pilih salah satu: `due_date` atau `due_date_shift_days`, bukan keduanya.');
+            }
+
             $attributes['due_date'] = $this->validDate($arguments['due_date']);
         }
 
-        $module->fill($attributes)->save();
+        $shiftDays = array_key_exists('due_date_shift_days', $arguments)
+            ? (int) $arguments['due_date_shift_days']
+            : null;
+
+        $destination = null;
+
+        if (filled($arguments['move_to_project_id'] ?? null)) {
+            $destination = Project::whereKey($arguments['move_to_project_id'])->value('id');
+
+            if ($destination === null) {
+                throw new RuntimeException('Project tujuan tidak ditemukan.');
+            }
+
+            $destination = (string) $destination;
+        }
+
+        if ($attributes === [] && $shiftDays === null && $destination === null) {
+            throw new RuntimeException('Tidak ada perubahan yang diminta.');
+        }
+
+        // A move and a per-row shift cannot be ONE mass UPDATE: the move needs a
+        // distinct order_index per row (appended after the destination's current
+        // maximum) and the shift needs each row's own date. Both go through the
+        // model, so casts and timestamps behave as they do on the single-row path.
+        if ($destination !== null || $shiftDays !== null) {
+            $nextIndex = $destination === null
+                ? null
+                : (int) (ProjectModule::where('project_id', $destination)->max('order_index') ?? -1) + 1;
+
+            DB::transaction(function () use ($modules, $attributes, $shiftDays, $destination, &$nextIndex): void {
+                foreach ($modules as $module) {
+                    $changes = $attributes;
+
+                    if ($destination !== null) {
+                        $changes['project_id'] = $destination;
+                        $changes['order_index'] = $nextIndex++;
+                    }
+
+                    if ($shiftDays !== null && $module->due_date !== null) {
+                        $changes['due_date'] = $module->due_date->copy()->addDays($shiftDays)->toDateString();
+                    }
+
+                    if ($changes !== []) {
+                        $module->fill($changes)->save();
+                    }
+                }
+            });
+        } else {
+            ProjectModule::query()->whereIn('id', $modules->modelKeys())->update($attributes);
+        }
+
+        if ($modules->count() === 1) {
+            $module = $modules->first()->fresh();
+
+            return [
+                'message' => 'Modul "'.$module->title.'" diperbarui.',
+                'data' => ['module' => $this->modulePayload($module)],
+            ];
+        }
+
+        $described = array_keys($attributes);
+
+        if ($shiftDays !== null) {
+            $described[] = 'tenggat digeser '.$shiftDays.' hari';
+        }
+
+        if ($destination !== null) {
+            $described[] = 'dipindah ke project '.$destination;
+        }
 
         return [
-            'message' => 'Modul "'.$module->title.'" diperbarui.',
-            'data' => ['module' => $this->modulePayload($module->fresh())],
+            'message' => $modules->count().' modul diperbarui ('.implode(', ', $described).').',
+            'data' => [
+                'updated_modules' => $modules->count(),
+                'attributes' => $attributes,
+                'due_date_shift_days' => $shiftDays,
+                'moved_to_project_id' => $destination,
+            ],
         ];
     }
 
     private function toolDeleteModule(array $arguments): array
     {
-        $module = $this->resolveModule($arguments);
-        $title = $module->title;
-        $module->delete();
+        $modules = $this->resolveTargets(
+            $arguments,
+            ProjectModule::query(),
+            'module_id',
+            'module_ids',
+            'modul',
+            ['project_id', 'status', 'priority'],
+        );
+
+        $titles = $modules->pluck('title')->all();
+        $deleted = ProjectModule::query()->whereIn('id', $modules->modelKeys())->delete();
+
+        $message = count($titles) === 1
+            ? 'Modul "'.$titles[0].'" dihapus.'
+            : $deleted.' modul dihapus ('.implode(', ', array_slice($titles, 0, 5))
+                .(count($titles) > 5 ? ', …' : '').').';
 
         return [
-            'message' => 'Modul "'.$title.'" dihapus.',
-            'data' => ['deleted_module' => $title],
+            'message' => $message,
+            'data' => count($titles) === 1
+                ? ['deleted_module' => $titles[0], 'deleted_modules' => $titles]
+                : ['deleted_modules' => $titles],
         ];
     }
 
@@ -449,7 +691,15 @@ class AiOrchestrator
 
     private function toolUpdateTask(array $arguments): array
     {
-        $task = $this->resolveTask($arguments);
+        $tasks = $this->resolveTargets(
+            $arguments,
+            Task::query(),
+            'task_id',
+            'task_ids',
+            'task',
+            ['status', 'priority'],
+        );
+
         $attributes = [];
 
         foreach (['title', 'notes'] as $field) {
@@ -467,26 +717,91 @@ class AiOrchestrator
         }
 
         if (array_key_exists('due_date', $arguments)) {
+            if (array_key_exists('due_date_shift_days', $arguments)) {
+                throw new RuntimeException('Pilih salah satu: `due_date` atau `due_date_shift_days`, bukan keduanya.');
+            }
+
             $attributes['due_date'] = $this->validDate($arguments['due_date']);
         }
 
-        $task->fill($attributes)->save();
+        $shiftDays = array_key_exists('due_date_shift_days', $arguments)
+            ? (int) $arguments['due_date_shift_days']
+            : null;
+
+        if ($attributes === [] && $shiftDays === null) {
+            throw new RuntimeException('Tidak ada perubahan yang diminta.');
+        }
+
+        // A per-row shift needs each row's own date, so it cannot be one mass
+        // UPDATE. Going through the model keeps the date cast and the timestamp
+        // behaviour identical to the single-row path.
+        if ($shiftDays !== null) {
+            DB::transaction(function () use ($tasks, $attributes, $shiftDays): void {
+                foreach ($tasks as $task) {
+                    $changes = $attributes;
+
+                    if ($task->due_date !== null) {
+                        $changes['due_date'] = $task->due_date->copy()->addDays($shiftDays)->toDateString();
+                    }
+
+                    if ($changes !== []) {
+                        $task->fill($changes)->save();
+                    }
+                }
+            });
+        } else {
+            Task::query()->whereIn('id', $tasks->modelKeys())->update($attributes);
+        }
+
+        if ($tasks->count() === 1) {
+            $task = $tasks->first()->fresh();
+
+            return [
+                'message' => 'Task "'.$task->title.'" diperbarui.',
+                'data' => ['task' => $this->taskPayload($task)],
+            ];
+        }
+
+        $described = array_keys($attributes);
+
+        if ($shiftDays !== null) {
+            $described[] = 'tenggat digeser '.$shiftDays.' hari';
+        }
 
         return [
-            'message' => 'Task "'.$task->title.'" diperbarui.',
-            'data' => ['task' => $this->taskPayload($task->fresh())],
+            'message' => $tasks->count().' task diperbarui ('.implode(', ', $described).').',
+            'data' => [
+                'updated_tasks' => $tasks->count(),
+                'attributes' => $attributes,
+                'due_date_shift_days' => $shiftDays,
+            ],
         ];
     }
 
     private function toolDeleteTask(array $arguments): array
     {
-        $task = $this->resolveTask($arguments);
-        $title = $task->title;
-        $task->delete();
+        $tasks = $this->resolveTargets(
+            $arguments,
+            Task::query(),
+            'task_id',
+            'task_ids',
+            'task',
+            ['status', 'priority'],
+        );
+
+        $titles = $tasks->pluck('title')->all();
+        $deleted = Task::query()->whereIn('id', $tasks->modelKeys())->delete();
+
+        $message = count($titles) === 1
+            ? 'Task "'.$titles[0].'" dihapus.'
+            : $deleted.' task dihapus ('.implode(', ', array_slice($titles, 0, 5))
+                .(count($titles) > 5 ? ', …' : '').').';
 
         return [
-            'message' => 'Task "'.$title.'" dihapus.',
-            'data' => ['deleted_task' => $title],
+            'message' => $message,
+            'data' => count($titles) === 1
+                ? ['deleted_task' => $titles[0], 'deleted_tasks' => $titles]
+                : ['deleted_tasks' => $titles],
         ];
     }
 
@@ -552,7 +867,7 @@ class AiOrchestrator
 
         try {
             $narrative = $this->deepseek->chat([
-                ['role' => 'system', 'content' => 'Kamu asisten manajemen proyek. Jawab singkat, padat, maksimal 5 poin, tanpa basa-basi.'],
+                ['role' => 'system', 'content' => 'Kamu Apollo, asisten manajemen proyek Omnitrack. Jawab singkat, padat, maksimal 5 poin, tanpa basa-basi.'],
                 ['role' => 'user', 'content' => "Ringkas kondisi board berikut dan sebutkan 2 prioritas berikutnya.\n\nInstruksi: {$prompt}\n\nData: ".json_encode($summary, JSON_UNESCAPED_UNICODE)],
             ], ['max_tokens' => 700]);
 
@@ -615,6 +930,23 @@ class AiOrchestrator
     // ------------------------------------------------------------- snapshots
 
     /**
+     * Count rows per status.
+     *
+     * @param  Collection<int, mixed>  $items  models carrying an ItemStatus cast
+     * @return array{done: int, in_progress: int, pending: int}
+     */
+    private function statusCounts(Collection $items): array
+    {
+        $counts = ['done' => 0, 'in_progress' => 0, 'pending' => 0];
+
+        foreach ($items as $item) {
+            $counts[$item->status->value]++;
+        }
+
+        return $counts;
+    }
+
+    /**
      * Compact workspace snapshot used as model context and for summaries.
      *
      * @return array<string, mixed>
@@ -631,18 +963,52 @@ class AiOrchestrator
 
         $tasks = Task::query()->orderBy('order_index')->get();
 
+        // One flat module list, so module completion is a single pass instead of
+        // a pass per project; the projects already carry their modules.
+        $modules = $projects->flatMap(fn (Project $project) => $project->modules);
+
+        $projectStatus = $this->statusCounts($projects);
+        $moduleStatus = $this->statusCounts($modules);
+        $taskStatus = $this->statusCounts($tasks);
+
         return [
             'stats' => [
                 'categories_total' => $categories->count(),
                 'projects_total' => $projects->count(),
-                'projects_done' => $projects->filter(fn (Project $p) => $p->status === ItemStatus::DONE)->count(),
-                'modules_total' => $projects->sum(fn (Project $p) => $p->modules->count()),
-                'modules_pending' => $projects->sum(fn (Project $p) => $p->modules->where('status', ItemStatus::PENDING)->count()),
+                'projects_done' => $projectStatus['done'],
+                'projects_in_progress' => $projectStatus['in_progress'],
+                'projects_pending' => $projectStatus['pending'],
+                'modules_total' => $modules->count(),
+                'modules_done' => $moduleStatus['done'],
+                'modules_in_progress' => $moduleStatus['in_progress'],
+                'modules_pending' => $moduleStatus['pending'],
                 'tasks_total' => $tasks->count(),
-                'tasks_done' => $tasks->filter(fn (Task $t) => $t->status === ItemStatus::DONE)->count(),
+                'tasks_done' => $taskStatus['done'],
+                'tasks_in_progress' => $taskStatus['in_progress'],
+                'tasks_pending' => $taskStatus['pending'],
                 'tasks_open' => $tasks->filter(fn (Task $t) => $t->status !== ItemStatus::DONE)->count(),
             ],
             'categories' => $categories->map(fn (Category $c) => $this->categoryPayload($c))->all(),
+            // Per-category completion for the Projects page chart. Derived from the
+            // already-loaded $projects rather than $category->projects, which would
+            // be one extra query per category. Categories owning nothing are
+            // dropped: an empty bar is noise, not information.
+            'category_progress' => $categories
+                ->map(function (Category $category) use ($projects): array {
+                    $owned = $projects->where('category_id', $category->id);
+
+                    return [
+                        'id' => $category->id,
+                        'name' => $category->name,
+                        'projects_total' => $owned->count(),
+                        'projects_done' => $owned->filter(fn (Project $p) => $p->status === ItemStatus::DONE)->count(),
+                        'projects_in_progress' => $owned->filter(fn (Project $p) => $p->status === ItemStatus::IN_PROGRESS)->count(),
+                        'projects_pending' => $owned->filter(fn (Project $p) => $p->status === ItemStatus::PENDING)->count(),
+                    ];
+                })
+                ->filter(fn (array $row) => $row['projects_total'] > 0)
+                ->values()
+                ->all(),
             'projects' => $projects->map(fn (Project $p) => [
                 'id' => $p->id,
                 'name' => $p->name,
@@ -680,7 +1046,7 @@ class AiOrchestrator
     private function agentSystemPrompt(): string
     {
         return <<<'PROMPT'
-        Kamu adalah agen pengelola workspace personal bernama Omnitrack.
+        Kamu adalah Apollo, agen pengelola workspace personal Omnitrack.
 
         Kamu punya kontrol penuh: membuat, mengubah, menghapus, dan MENGATUR URUTAN
         kategori, project, modul (sub-todo), dan task.
@@ -740,6 +1106,178 @@ class AiOrchestrator
         return null;
     }
 
+    // ------------------------------------------------------- bulk targeting
+
+    /**
+     * The rows a bulk-capable tool should act on.
+     *
+     * Precedence is fixed here and advertised to the model in WorkspaceTools:
+     * an explicit id list wins, then `all` narrowed by `where`, then one id.
+     * Every path queries the database, so an id that does not exist is reported
+     * instead of being silently ignored.
+     *
+     * @param  array<string, mixed>  $arguments
+     * @param  Builder<*>  $query  unfiltered base query for the entity
+     * @param  list<string>  $whereKeys  filter keys this entity accepts
+     * @return EloquentCollection<int, Model>
+     */
+    private function resolveTargets(
+        array $arguments,
+        Builder $query,
+        string $singleKey,
+        string $pluralKey,
+        string $label,
+        array $whereKeys = [],
+    ): EloquentCollection {
+        $ids = $arguments[$pluralKey] ?? null;
+
+        if (is_array($ids) && $ids !== []) {
+            $found = $query->whereIn('id', array_map('strval', $ids))->get();
+
+            if ($found->isEmpty()) {
+                throw new RuntimeException('Tidak ada '.$label.' yang cocok dengan daftar ID itu.');
+            }
+
+            return $found;
+        }
+
+        if (($arguments['all'] ?? false) === true) {
+            // Only non-blank values count as a filter. Otherwise a `where` of
+            // {"status": null} would look scoped while narrowing nothing, and the
+            // confirm rail below would be skipped for a full wipe.
+            $where = array_filter(
+                is_array($arguments['where'] ?? null) ? $arguments['where'] : [],
+                fn ($value) => filled($value),
+            );
+
+            // Reject a filter this entity cannot express instead of ignoring it.
+            // A silently dropped `where` is exactly how a caller deletes far more
+            // than it asked for while believing it was scoped.
+            $unsupported = array_diff(array_keys($where), $whereKeys);
+
+            if ($unsupported !== []) {
+                throw new RuntimeException(
+                    'Filter `where` tidak dikenal untuk '.$label.': '.implode(', ', $unsupported)
+                    .'. Yang didukung: '.($whereKeys === [] ? '(tidak ada)' : implode(', ', $whereKeys)).'.'
+                );
+            }
+
+            if ($where === []) {
+                $this->guardUnscopedAll($arguments, $label);
+            }
+
+            foreach ($where as $key => $value) {
+                $query->where($key, match ($key) {
+                    'status' => ItemStatus::normalize($value)->value,
+                    'priority' => ItemPriority::normalize($value)->value,
+                    default => (string) $value,
+                });
+            }
+
+            return $query->get();
+        }
+
+        $id = $arguments[$singleKey] ?? null;
+
+        if (blank($id)) {
+            throw new RuntimeException(
+                'Sebutkan '.$singleKey.', '.$pluralKey.', atau all: true untuk menentukan '.$label.' mana yang dimaksud.'
+            );
+        }
+
+        return $query->whereKey($id)->get();
+    }
+
+    /**
+     * Refuse an `all` that names nothing.
+     *
+     * WHY: `all: true` is the only selector that can touch rows the caller never
+     * named -- a typo in an id list can only ever affect rows that were written
+     * out by hand. Requiring a second flag for the unscoped case means a
+     * whole-workspace wipe takes two deliberate decisions instead of one.
+     *
+     * @param  array<string, mixed>  $arguments
+     */
+    private function guardUnscopedAll(array $arguments, string $label): void
+    {
+        if (($arguments['confirm'] ?? false) !== true) {
+            throw new RuntimeException(
+                'all: true tanpa `where` akan mengenai SELURUH '.$label.' di workspace. '
+                .'Tambahkan pembatas di `where`, atau set confirm: true bila memang itu yang diminta.'
+            );
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $arguments
+     * @return EloquentCollection<int, Category>
+     */
+    private function categoryTargets(array $arguments): EloquentCollection
+    {
+        $ids = $arguments['category_ids'] ?? null;
+
+        if (is_array($ids) && $ids !== []) {
+            $found = Category::query()->whereIn('id', array_map('strval', $ids))->get();
+
+            if ($found->isEmpty()) {
+                throw new RuntimeException('Tidak ada kategori yang cocok dengan daftar ID itu.');
+            }
+
+            return $found;
+        }
+
+        if (($arguments['all'] ?? false) === true) {
+            $this->guardUnscopedAll($arguments, 'kategori');
+
+            return Category::query()->orderBy('order_index')->get();
+        }
+
+        $category = $this->resolveCategoryRow($arguments);
+
+        if (! $category) {
+            throw new RuntimeException(
+                'Sebutkan category_id, name, category_ids, atau all: true untuk menentukan kategori mana yang dimaksud.'
+            );
+        }
+
+        return new EloquentCollection([$category]);
+    }
+
+    /**
+     * Look a category up for the category tools themselves.
+     *
+     * WHY this is not resolveCategoryId(): that one is also reached from the
+     * project tools, where `name` means the PROJECT name. Accepting `name` there
+     * would silently file a project into whatever category happened to share its
+     * name. The category tools are the only place where `name` denotes a
+     * category.
+     *
+     * It also never creates: resolveCategoryId()'s firstOrCreate would turn
+     * "delete category Foo" into "create Foo, then delete it".
+     *
+     * @param  array<string, mixed>  $arguments
+     */
+    private function resolveCategoryRow(array $arguments): ?Category
+    {
+        foreach (['category_id', 'name', 'category_name'] as $key) {
+            if (blank($arguments[$key] ?? null)) {
+                continue;
+            }
+
+            $value = trim((string) $arguments[$key]);
+
+            $found = $key === 'category_id'
+                ? Category::whereKey($value)->first()
+                : Category::where('slug', Str::slug($value))->first() ?? Category::where('name', $value)->first();
+
+            if ($found) {
+                return $found;
+            }
+        }
+
+        return null;
+    }
+
     /** @param array<string, mixed> $arguments */
     private function resolveCategory(array $arguments): Category
     {
@@ -770,30 +1308,6 @@ class AiOrchestrator
         }
 
         return $project;
-    }
-
-    /** @param array<string, mixed> $arguments */
-    private function resolveModule(array $arguments): ProjectModule
-    {
-        $id = $arguments['module_id'] ?? null;
-
-        if (blank($id)) {
-            throw new RuntimeException('module_id wajib diisi.');
-        }
-
-        return ProjectModule::findOrFail($id);
-    }
-
-    /** @param array<string, mixed> $arguments */
-    private function resolveTask(array $arguments): Task
-    {
-        $id = $arguments['task_id'] ?? null;
-
-        if (blank($id)) {
-            throw new RuntimeException('task_id wajib diisi.');
-        }
-
-        return Task::findOrFail($id);
     }
 
     /** @param array<string, mixed> $arguments */

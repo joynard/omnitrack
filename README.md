@@ -6,9 +6,10 @@ Personal workspace + task tracker. It keeps two deliberately isolated domains:
   optionally ingested from a Google Sheet.
 - **Tasks** — ad-hoc personal checklist, independent of any project.
 
-Plus a global **`Ctrl + P` AI command palette** backed by the DeepSeek API, and a
+Plus a global **`Ctrl + P` Apollo palette** backed by the DeepSeek API, a
 token-protected **`/api/harness/*`** bridge so DeepSeek Harness can drive the
-workspace autonomously.
+workspace autonomously, and a **Telegram bot** that runs the same palette agent
+from a phone.
 
 ---
 
@@ -22,7 +23,7 @@ workspace autonomously.
 | Queue / Cache / Session | `database` driver — no Redis needed |
 | Frontend | Blade + hand-authored CSS + vanilla JS (no Node build step) |
 | Container | PHP-FPM + Nginx + Supervisor in one image |
-| External | Google Sheets API v4, DeepSeek API |
+| External | Google Sheets API v4, DeepSeek API, Telegram Bot API |
 
 ### Why no Node/Tailwind build
 
@@ -180,7 +181,7 @@ the UI have `sheet_source_id = NULL`, so a sync can never modify or delete them.
 
 ---
 
-## AI Command Palette (`Ctrl + P`)
+## Apollo palette (`Ctrl + P`)
 
 Press **`Ctrl + P`** (or **`Cmd + P`**) anywhere. **`Esc`** closes it; the input
 is autofocused. There is no header button — the shortcut is the only entry point,
@@ -188,15 +189,15 @@ as requested.
 
 **Full control (default action).** The palette uses DeepSeek *native tool
 calling*, so the model returns a structured call instead of prose the app has to
-parse. The model chooses one of 14 tools, and the app validates it before
+parse. The model chooses one of 16 tools, and the app validates it before
 touching the database. That covers:
 
 | Area | Capabilities |
 | --- | --- |
-| Categories | create, rename, delete |
-| Projects | create, update (including moving category), delete, reorder |
-| Modules | batch create, update, delete, reorder within a project |
-| Tasks | batch create, update, delete, reorder |
+| Categories | create (with colour), rename, recolour, reorder, delete, **bulk delete by id list or `all`** |
+| Projects | create, update (including moving category), delete, reorder, **bulk update/delete by id list or `all` + `where`** |
+| Modules | batch create, update, delete, reorder within a project, **move to another project**, **bulk delete/update across a project or the whole workspace**, **shift due dates** |
+| Tasks | batch create, update, delete, reorder, **bulk delete/update by id list or `all` + `where`**, **shift due dates** |
 
 Examples that work:
 
@@ -240,7 +241,12 @@ Order is stored explicitly as `order_index` on projects, modules and tasks.
 - Task drag is disabled while a status filter is active, because reordering a
   filtered subset would produce a partial list.
 - All three reorder paths (AI, board UI, harness API) call one shared
-  `reorderByIds()` helper, which skips foreign ids and closes any gaps.
+  `ReordersByIds` trait, which skips foreign ids and closes any gaps.
+- That helper used `upsert()` until it was replaced with a single `CASE`
+  expression. `upsert()` proposes a whole INSERT tuple, so every NOT NULL column
+  the row does not mention (`projects.name`, `tasks.title`,
+  `project_modules.project_id`) still had to be supplied, and SQLite rejected the
+  proposal outright — which is why every reorder test used to be red.
 
 ---
 
@@ -283,7 +289,7 @@ The token may also be passed as `?token=` for quick manual checks. If
 | Method | Endpoint | Behaviour |
 | --- | --- | --- |
 | `GET` | `/api/harness/context` | Compact JSON summary of categories, projects, modules, tasks, and sync state, sized for context injection |
-| `GET` | `/api/harness/tools` | The 14 tool definitions, so an agent can discover the surface at runtime |
+| `GET` | `/api/harness/tools` | The 16 tool definitions, so an agent can discover the surface at runtime |
 | `POST` | `/api/harness/agent` | Natural-language instruction handled by the full-control agent |
 | `GET` | `/api/harness/categories` | List categories with project counts |
 | `POST` | `/api/harness/categories` | Create a category |
@@ -293,11 +299,16 @@ The token may also be passed as `?token=` for quick manual checks. If
 | `POST` | `/api/harness/projects/{project}` | Update a project (`category_id`, `category_name`, …) |
 | `DELETE` | `/api/harness/projects/{project}` | Delete a project and its modules |
 | `POST` | `/api/harness/projects/reorder` | Reorder projects from a complete id list |
+| `POST` | `/api/harness/projects/bulk` | **Bulk update or delete projects** (`action`, then `project_ids` or `all` + `where`) |
 | `POST` | `/api/harness/projects/{id}/modules` | Batch-add modules to a project |
 | `POST` | `/api/harness/projects/{id}/modules/reorder` | Reorder a project's modules |
+| `POST` | `/api/harness/modules/bulk` | **Bulk update or delete modules** by id list, or `all` + `where` (one project, one status, …) |
 | `POST` | `/api/harness/modules/{module}` | Update one module |
 | `DELETE` | `/api/harness/modules/{module}` | Delete one module |
+| `POST` | `/api/harness/categories/reorder` | Reorder categories from a complete id list |
+| `POST` | `/api/harness/categories/bulk` | **Bulk delete categories** (the projects survive, unfiled) |
 | `POST` | `/api/harness/tasks` | Create, update, or delete a task (`action`) |
+| `POST` | `/api/harness/tasks/bulk` | **Bulk update or delete tasks** by id list, or `all` + `where` |
 | `POST` | `/api/harness/tasks/{task}` | Update one task |
 | `DELETE` | `/api/harness/tasks/{task}` | Delete one task |
 | `POST` | `/api/harness/tasks/reorder` | Reorder tasks from a complete id list |
@@ -306,6 +317,53 @@ The token may also be passed as `?token=` for quick manual checks. If
 All mutations are funnelled through `AiOrchestrator::callTool()`, so the palette,
 the Blade UI, and this API share one validated implementation. Responses use the
 shape `{status, message, data}`; validation failures return **422**, not 500.
+
+### Bulk targeting
+
+Every mutating tool — and therefore every `/bulk` endpoint — resolves its target
+the same way, in this order:
+
+1. **`*_ids`** — an explicit list. Wins over everything else.
+2. **`all: true`** — every row matching the optional `where` filter. Each entity
+   advertises exactly the filters it can express: `status` for projects, modules
+   and tasks; `priority` for modules and tasks; `project_id` for modules;
+   `category_id` for projects; and **nothing at all** for categories, so an `all`
+   there is always a whole-workspace wipe and always needs `confirm`.
+3. **`*_id`** — a single row (categories also accept `name`).
+
+Two update-only keys are not selectors, but neither can be expressed as a single
+mass `UPDATE`, so both take a slower per-row path:
+
+- **`move_to_project_id`** (modules) — moves the targets to another project,
+  appended after that project's current maximum `order_index`.
+- **`due_date_shift_days`** (modules and tasks) — shifts *each* row's own due date
+  by N days; rows with no due date are left alone. Mutually exclusive with
+  `due_date`, which itself also accepts anything `strtotime()` understands, so
+  `"+7 days"` works for a single row.
+
+`all` is a separate boolean rather than "an omitted id means everything", because
+the dangerous case has to be said out loud: a typo in an id list can only ever
+affect rows that were named. An `all: true` with no `where` at all is the one
+path that can touch rows nobody named, so it also requires **`confirm: true`** —
+two deliberate decisions before a whole-workspace wipe. A scoped `all` (one
+project, one status) needs no confirmation.
+
+```bash
+# Delete three specific modules
+curl -s -X POST "$BASE/api/harness/modules/bulk" -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"action":"delete","module_ids":["01H...","01H...","01H..."]}'
+
+# Delete every module in one project (scoped, so no confirm needed)
+curl -s -X POST "$BASE/api/harness/modules/bulk" -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"action":"delete","all":true,"where":{"project_id":"01H..."}}'
+
+# Mark every pending task done
+curl -s -X POST "$BASE/api/harness/tasks/bulk" -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"action":"update","all":true,"where":{"status":"pending"},"status":"done"}'
+```
 
 
 ### Examples
@@ -349,6 +407,111 @@ healthcheck.
 
 ---
 
+## Telegram bot — drive Omnitrack from your phone
+
+Send instructions to your own Telegram bot and Omnitrack executes them. It reuses
+the palette's agent, so everything `Ctrl + P` can do works from a phone:
+
+```
+Buat project "Vendor Migration Q4" di kategori Kantor
+Tambah modul "Draft SLA" dan "Audit vendor" ke project itu
+Tandai task "Follow up vendor" selesai
+Sinkronkan Google Sheets
+Apa progres project Vendor Migration Q4?
+```
+
+### Why the laptop has to stay on
+
+The bot uses **long polling**, not a webhook: the container calls `getUpdates` and
+Telegram holds that request open for 25 s. That needs no public URL, no tunnel and
+no inbound port, so it works from a laptop behind NAT — and stops the moment the
+stack does. A webhook would instead need a public HTTPS endpoint (Koyeb, ngrok)
+and would keep working with the laptop off.
+
+### Setup
+
+1. Talk to **@BotFather**, run `/newbot`, and copy the token into `.env`:
+
+   ```env
+   TELEGRAM_BOT_TOKEN=123456789:AA...
+   TELEGRAM_ALLOWED_CHAT_IDS=
+   ```
+
+2. Start the poller. It is the **`telegram` Compose service**, so it comes up with
+   the stack and needs **no image rebuild** — the service reuses the
+   `omnitrack-engine:local` image that is already built:
+
+   ```powershell
+   ./scripts/dev.ps1 up
+   ```
+
+   To follow just the bot, or to watch it attached to the terminal:
+
+   ```powershell
+   ./scripts/dev.ps1 logs telegram
+   ./scripts/dev.ps1 telegram
+   ```
+
+   Only one poller at a time: a second one makes Telegram answer **409 Conflict**
+   to whichever long poll arrives second. `dev.ps1 telegram` therefore attaches to
+   the Compose service instead of starting a rival process.
+
+3. Send `/start` to your bot. While `TELEGRAM_ALLOWED_CHAT_IDS` is empty the bot
+   answers with your chat id and nothing else, so paste it in:
+
+   ```env
+   TELEGRAM_ALLOWED_CHAT_IDS=123456789
+   ```
+
+4. `./scripts/dev.ps1 restart`, then verify:
+
+   ```powershell
+   ./scripts/dev.ps1 artisan telegram:status
+   ```
+
+| Command | Purpose |
+| --- | --- |
+| `./scripts/dev.ps1 up` | Starts the stack **including the poller**, as the `telegram` Compose service. |
+| `./scripts/dev.ps1 logs telegram` | Follow just the bot's output. |
+| `php artisan telegram:poll` | The long-poll worker itself. `--once` processes what is pending and exits; `--timeout=` overrides the 25 s poll. |
+| `php artisan telegram:status` | Configuration, chats seen so far, webhook state, last error. `--webhook-off` unregisters a webhook. |
+
+### Security
+
+`TELEGRAM_ALLOWED_CHAT_IDS` is not optional. This module can create **and delete**
+projects, modules and tasks, so the authorisation check fails closed: with an
+empty list nobody is served, and a message from an unlisted chat is ignored and
+logged as a `warning`. While the list is empty the bot replies to strangers with
+nothing but their own chat id — the only way to learn yours without a debug
+console, and harmless once the list is filled in, because that branch is then dead.
+
+### Behaviour worth knowing
+
+| Message | Routed to | Why |
+| --- | --- | --- |
+| Ends with `?`, or starts with `apa` / `berapa` / `status` / `list` / … | `summarize_board` (read-only) | The full-control agent runs with `tool_choice: required`, so it **always** returns a mutation. A question must never reach it. |
+| Starts with `sinkron` / `sync` / `refresh` | `trigger_sync` | Queues the Google Sheets ingestion job. |
+| `/start`, `/help`, `/id` | Onboarding only | Everything else is meant to be said in plain language. |
+| Anything else | The full-control agent | The same 14 workspace tools and the same validation as the palette. |
+
+Other guarantees:
+
+- **Every update is stored before it runs.** `telegram_messages.update_id` is
+  unique, so a redelivery after an interrupted poll is a no-op — and the table
+  doubles as the long-poll cursor (`max(update_id) + 1`), surviving a restart
+  without a second store.
+- **Replies are plain text.** Model output regularly contains `*`, `_` and
+  backticks, and one malformed entity makes Telegram reject the whole message;
+  answers longer than the 4096-character limit are split on a newline.
+- **A failed instruction still gets a reply** and is recorded as `failed`, so
+  `telegram:status` shows the last error instead of failing silently.
+- **No token is harmless.** `telegram:poll` exits 0, and the service is declared
+  `restart: on-failure` — not `always` — precisely so an intentional exit 0 leaves
+  the container stopped instead of hot-looping. A genuine crash (exit 1) is still
+  restarted.
+
+---
+
 ## Deploying to Koyeb
 
 1. Push this repository to GitHub.
@@ -376,9 +539,18 @@ healthcheck.
    DEEPSEEK_API_KEY=sk-...
    HARNESS_SECRET_TOKEN=...
    GOOGLE_SHEET_ID=1lgivxc5ZnctCyX9swahxWjZMiq2tl7JSOEHvJ2Dxktw
+
+   TELEGRAM_BOT_TOKEN=123456789:AA...
+   TELEGRAM_ALLOWED_CHAT_IDS=123456789
    ```
 
 5. Migrations run automatically on boot (`RUN_MIGRATIONS=true`).
+
+The Telegram poller needs one extra step here: it runs as a **Compose service**
+locally, and Koyeb runs only the image. Add it as a fourth Supervisor program
+before deploying, or the bot will not run there. `docker/supervisord.conf` carries
+a commented-out block with the exact settings, including why `startsecs=0` and a
+`stopwaitsecs` above the 25 s long poll matter.
 
 ### Google credentials on Koyeb
 
@@ -403,17 +575,20 @@ php /var/www/html/artisan schedule:work
 
 ```
 app/
-  Enums/          ItemStatus, ItemPriority, AiActionType (with normalize())
+  Console/Commands/ TelegramPollCommand, TelegramStatusCommand
+  Enums/          ItemStatus, ItemPriority, AiActionType, TelegramMessageStatus
   Http/
     Controllers/  BoardController, AiCommandController
     Controllers/Api/  HarnessController
     Middleware/   VerifyHarnessToken
   Jobs/           SyncGoogleSheetJob
-  Models/         SheetSource, Project, ProjectModule, Task, AiPromptTemplate
-  Services/       GoogleSheetService, DeepSeekService, AiOrchestrator
+  Models/         SheetSource, Project, ProjectModule, Task, AiPromptTemplate,
+                  TelegramMessage, User
+  Services/       GoogleSheetService, DeepSeekService, AiOrchestrator,
+                  TelegramService, TelegramBot
 database/
-  migrations/     ULID-keyed domain tables + jobs/cache/sessions
-  seeders/        sheet source + palette templates
+  migrations/     ULID-keyed domain tables + jobs/cache/sessions + telegram_messages
+  seeders/        the single login account only -- see DatabaseSeeder's comment
   factories/
 docker/           nginx.conf, supervisord.conf, php.ini, entrypoint.sh
 public/
@@ -430,6 +605,7 @@ sheet_sources 1─┐
                 └─< projects 1──< project_modules
 tasks                          (standalone)
 ai_prompt_templates            (palette presets)
+telegram_messages              (bot audit log + long-poll cursor)
 ```
 
 All primary keys are **ULID** (`HasUlids`), which keeps rows sortable by creation
@@ -455,7 +631,11 @@ docker compose -f docker-compose.test.yml run --rm --no-deps --entrypoint php te
 needed. Tests must never reach external APIs; the suite runs with
 `DEEPSEEK_API_KEY` empty precisely to prove the fallbacks work.
 
-Current status: **26 passed (107 assertions)**.
+Current status: **93 passed, 0 failed (412 assertions)**. The suite is green — the
+last pre-existing failures were fixed alongside the bulk-CRUD work: the reorder
+tests were failing on `upsert()`, the board tests lacked `actingAs()`, and two
+assertions were stale against deliberate application decisions. See the testing
+note in `AGENTS.md`.
 
 The suite covers:
 
@@ -467,6 +647,9 @@ The suite covers:
 - Upsert create / no-op / update semantics, and proof that manually created
   projects are never touched by a sheet sync
 - Page rendering, palette presence, and local board CRUD endpoints
+- The Telegram bot, entirely through `Http::fake`: the authorisation gate, the
+  onboarding reply, natural-language execution, sync routing, and that a
+  redelivered update and a read-only question can neither duplicate nor mutate
 
 ---
 

@@ -3,13 +3,14 @@
 namespace App\Models;
 
 use App\Enums\AiActionType;
+use Database\Factories\AiPromptTemplateFactory;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class AiPromptTemplate extends Model
 {
-    /** @use HasFactory<\Database\Factories\AiPromptTemplateFactory> */
+    /** @use HasFactory<AiPromptTemplateFactory> */
     use HasFactory, HasUlids;
 
     protected $fillable = [

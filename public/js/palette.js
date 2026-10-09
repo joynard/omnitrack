@@ -13,8 +13,9 @@
         { title: 'Buat task', prompt: '', action: 'parse_task' },
         { title: 'Pecah jadi 3 sub-modul', prompt: 'Pecah project ini menjadi 3 sub-modul teknis.', action: 'breakdown_project' },
         { title: 'Urutkan modul', prompt: 'Urutkan modul project ini, yang paling mendesak di atas.', action: 'agent' },
-        { title: 'Ringkas board', prompt: 'Ringkas kondisi board dan sebutkan prioritas berikutnya.', action: 'summarize_board' },
-        { title: 'Sinkron Sheets', prompt: '', action: 'trigger_sync' }
+        { title: 'Ringkas board', prompt: 'Ringkas kondisi board dan sebutkan prioritas berikutnya.', action: 'summarize_board' }
+        // No "Sinkron Sheets": the Projects page already has a dedicated Sync
+        // button, so a suggestion chip for it was pure duplication.
     ];
 
     var overlay = document.getElementById('palette-overlay');
@@ -34,6 +35,9 @@
     var actionSelect = document.getElementById('palette-action');
     var projectSelect = document.getElementById('palette-project');
     var projectField = document.getElementById('palette-project-field');
+    var projectSearch = document.getElementById('palette-project-search');
+    var projectList = document.getElementById('palette-project-list');
+    var projectClear = document.getElementById('palette-project-clear');
     var feedback = document.getElementById('palette-feedback');
     var templateHost = document.getElementById('palette-templates');
     var submitButton = document.getElementById('palette-submit');
@@ -64,6 +68,14 @@
             templatesLoaded = true;
             loadTemplates();
         }
+
+        // Start with no project chosen. Without this the picker would keep
+        // whatever was selected during a previous instruction, and the next
+        // "pindahkan project ini" could silently apply to the wrong one.
+        resetProjectPicker();
+
+        // The field may still hold the previous instruction.
+        autoGrowPrompt();
     }
 
     function close() {
@@ -73,6 +85,7 @@
 
         overlay.hidden = true;
         document.body.style.overflow = '';
+        closeProjectList();
 
         if (lastFocused && typeof lastFocused.focus === 'function') {
             lastFocused.focus();
@@ -107,6 +120,7 @@
                     promptInput.value = template.prompt || '';
                     promptInput.focus();
                     promptInput.setSelectionRange(promptInput.value.length, promptInput.value.length);
+                    autoGrowPrompt();
                 }
 
                 if (actionSelect && template.action) {
@@ -140,6 +154,27 @@
 
     /* ---------------------------------------------------------------- form */
 
+    /**
+     * Grow the instruction field with its content.
+     *
+     * WHY height='auto' first: scrollHeight only reports the content height while
+     * the element is not already taller than that content, so without the reset
+     * the field could grow but never shrink again after a delete.
+     */
+    function autoGrowPrompt() {
+        if (!promptInput || promptInput.tagName !== 'TEXTAREA') {
+            return;
+        }
+
+        promptInput.style.height = 'auto';
+
+        // scrollHeight excludes the border, and border-box sizing means setting
+        // height to it alone would leave a permanent 1px scrollbar.
+        var borders = promptInput.offsetHeight - promptInput.clientHeight;
+
+        promptInput.style.height = (promptInput.scrollHeight + borders) + 'px';
+    }
+
     function syncActionUi() {
         if (!actionSelect) {
             return;
@@ -149,7 +184,7 @@
 
         // The project picker only matters for actions scoped to one project.
         if (projectField) {
-            projectField.hidden = !(action === 'breakdown_project' || action === 'agent');
+            projectField.hidden = !needsProject(action);
         }
 
         if (promptInput) {
@@ -162,9 +197,18 @@
             }
         }
 
-        if ((action === 'breakdown_project' || action === 'agent')) {
+        if (needsProject(action)) {
             loadProjects();
         }
+    }
+
+    /**
+     * Whether an action is scoped to one project, and therefore whether the
+     * picker is shown -- and required. One predicate for both, so the field can
+     * never be visible without also being mandatory.
+     */
+    function needsProject(action) {
+        return action === 'breakdown_project' || action === 'agent';
     }
 
     function setFeedback(message, kind) {
@@ -177,26 +221,221 @@
         feedback.textContent = message;
     }
 
+    /* ------------------------------------------------------- project picker */
+
+    // Sentinel for "no specific project". It is a mode, never an id: project_id
+    // is validated against the projects table, so this must not reach the API.
+    var ALL_PROJECTS = '__all__';
+    // No "(global)" suffix: the row is already set apart by weight, colour and a
+    // separator line, and the shorter label stays readable once it is picked.
+    var ALL_LABEL = 'Seluruh workspace';
+
+    var allProjects = [];
+    var projectsLoaded = false;
+    var selectedProject = null;
+    var activeOption = -1;
+
+    /**
+     * Fetch the projects once and filter them in the browser.
+     *
+     * There are tens of projects, not thousands, so a request per keystroke
+     * would be strictly slower than filtering an array already in memory.
+     */
     async function loadProjects() {
-        if (!projectSelect || projectSelect.dataset.loaded === '1') {
+        if (projectsLoaded) {
+            renderProjectOptions(projectSearch ? projectSearch.value : '');
             return;
         }
+
+        projectsLoaded = true;
 
         var result = await window.Omnitrack.request('/board/projects');
-        var rows = result.body && Array.isArray(result.body.projects) ? result.body.projects : [];
 
-        projectSelect.dataset.loaded = '1';
+        allProjects = result.body && Array.isArray(result.body.projects) ? result.body.projects : [];
 
-        if (!rows.length) {
-            projectSelect.innerHTML = '<option value="">Belum ada project</option>';
+        renderProjectOptions(projectSearch ? projectSearch.value : '');
+    }
+
+    function renderProjectOptions(term) {
+        if (!projectList) {
             return;
         }
 
-        projectSelect.innerHTML = '<option value="">Project terakhir</option>' +
-            rows.map(function (project) {
-                return '<option value="' + window.Omnitrack.escapeHtml(project.id) + '">' +
-                    window.Omnitrack.escapeHtml(project.name) + '</option>';
-            }).join('');
+        term = (term || '').trim().toLowerCase();
+
+        var rows = allProjects.filter(function (project) {
+            return term === '' || project.name.toLowerCase().indexOf(term) !== -1;
+        });
+
+        projectList.innerHTML = '';
+        activeOption = -1;
+
+        // Pinned first and never filtered away: this is the escape hatch from
+        // "one project only", so it has to be reachable whatever is typed.
+        projectList.appendChild(buildGlobalOption());
+
+        if (!rows.length) {
+            var empty = document.createElement('li');
+            empty.className = 'combobox-empty';
+            empty.textContent = allProjects.length
+                ? 'Tidak ada project yang cocok.'
+                : 'Belum ada project.';
+            projectList.appendChild(empty);
+
+            return;
+        }
+
+        // A hard cap keeps a pathological workspace from rendering hundreds of
+        // nodes while typing; the search term is the intended way to narrow.
+        rows.slice(0, 50).forEach(function (project) {
+            var option = document.createElement('li');
+            option.className = 'combobox-option';
+            option.setAttribute('role', 'option');
+            option.dataset.id = project.id;
+            option.dataset.name = project.name;
+
+            // textContent, never innerHTML: project names are user input. The
+            // category is deliberately not shown -- /board/projects returns it as
+            // ['id' => ..., 'name' => ...], and setting textContent to it printed
+            // "[object Object]" on every row. The name alone is also all the row
+            // needs; the list is searched, not read.
+            option.textContent = project.name;
+
+            // mousedown, not click: the input would blur first and the list would
+            // already be closed by the time the click landed.
+            option.addEventListener('mousedown', function (event) {
+                event.preventDefault();
+                pickProject(project.id, project.name);
+            });
+
+            projectList.appendChild(option);
+        });
+    }
+
+    function openProjectList() {
+        if (!projectList) {
+            return;
+        }
+
+        renderProjectOptions(projectSearch ? projectSearch.value : '');
+        projectList.hidden = false;
+
+        if (projectSearch) {
+            projectSearch.setAttribute('aria-expanded', 'true');
+        }
+    }
+
+    function closeProjectList() {
+        if (!projectList) {
+            return;
+        }
+
+        projectList.hidden = true;
+        activeOption = -1;
+
+        if (projectSearch) {
+            projectSearch.setAttribute('aria-expanded', 'false');
+        }
+    }
+
+    /** The workspace-wide row, rendered like an option but meaning "no focus". */
+    function buildGlobalOption() {
+        var option = document.createElement('li');
+        option.className = 'combobox-option is-global';
+        option.setAttribute('role', 'option');
+        option.dataset.id = ALL_PROJECTS;
+        option.dataset.name = ALL_LABEL;
+        option.textContent = ALL_LABEL;
+
+        option.addEventListener('mousedown', function (event) {
+            event.preventDefault();
+            pickProject(ALL_PROJECTS, ALL_LABEL);
+        });
+
+        return option;
+    }
+
+    function pickProject(id, name) {
+        selectedProject = id || null;
+
+        // The global mode clears the hidden field instead of carrying the
+        // sentinel, so a native form post could never send project_id=__all__.
+        projectSelect.value = selectedProject === ALL_PROJECTS ? '' : (selectedProject || '');
+
+        if (projectSearch) {
+            projectSearch.value = name || '';
+        }
+
+        if (projectClear) {
+            projectClear.hidden = !selectedProject;
+        }
+
+        closeProjectList();
+        clearProjectError();
+    }
+
+    function clearProject() {
+        selectedProject = null;
+        projectSelect.value = '';
+
+        if (projectSearch) {
+            projectSearch.value = '';
+            projectSearch.focus();
+        }
+
+        if (projectClear) {
+            projectClear.hidden = true;
+        }
+
+        closeProjectList();
+    }
+
+    /** Back to the pristine state, used every time the palette opens. */
+    function resetProjectPicker() {
+        clearProject();
+
+        if (projectField) {
+            projectField.classList.remove('is-required');
+        }
+    }
+
+    function highlightOption(index) {
+        if (!projectList) {
+            return;
+        }
+
+        var options = projectList.querySelectorAll('.combobox-option');
+
+        if (!options.length) {
+            return;
+        }
+
+        activeOption = Math.max(0, Math.min(index, options.length - 1));
+
+        Array.prototype.forEach.call(options, function (option, i) {
+            option.classList.toggle('is-active', i === activeOption);
+        });
+
+        options[activeOption].scrollIntoView({ block: 'nearest' });
+    }
+
+    function markProjectError(message) {
+        setFeedback(message, 'error');
+
+        if (projectField) {
+            projectField.classList.add('is-required');
+        }
+
+        if (projectSearch) {
+            projectSearch.focus();
+            openProjectList();
+        }
+    }
+
+    function clearProjectError() {
+        if (projectField) {
+            projectField.classList.remove('is-required');
+        }
     }
 
     /**
@@ -239,6 +478,7 @@
 
             if (promptInput) {
                 promptInput.value = '';
+                autoGrowPrompt();
             }
 
             return true;
@@ -330,9 +570,10 @@
 
         setFeedback(lines.join('\n\n'), 'success');
 
-        // Enter on a project result opens its detail dialog.
+        // Exactly one project hit is unambiguous, so adopt it as the target of
+        // the next instruction. (This used to set a dataset flag nothing read.)
         if (projects.length === 1) {
-            projectSelect && (projectSelect.dataset.searchHit = projects[0].id);
+            pickProject(projects[0].id, projects[0].name);
         }
     }
 
@@ -357,10 +598,20 @@
             return;
         }
 
+        // The picker is mandatory wherever it is shown. It is hidden only for the
+        // workspace-wide actions, so this blocks exactly the ambiguous case:
+        // "pindahkan project ini" with no project named.
+        if (needsProject(action) && !selectedProject) {
+            markProjectError('Pilih project dulu: ketik untuk mencari, lalu klik atau tekan Enter.');
+            return;
+        }
+
         var payload = { action_type: action, prompt: prompt };
 
-        if (projectSelect && projectSelect.value) {
-            payload.project_id = projectSelect.value;
+        // Global means "send no project at all", which is how the orchestrator
+        // has always read an absent project_id: no focus, free to act anywhere.
+        if (selectedProject && selectedProject !== ALL_PROJECTS) {
+            payload.project_id = selectedProject;
         }
 
         busy = true;
@@ -438,6 +689,94 @@
 
     if (actionSelect) {
         actionSelect.addEventListener('change', syncActionUi);
+    }
+
+    if (promptInput) {
+        promptInput.addEventListener('input', autoGrowPrompt);
+
+        promptInput.addEventListener('keydown', function (event) {
+            // A textarea inserts a newline on Enter, which would break the
+            // palette's "Enter jalankan". Shift + Enter still inserts one.
+            if (event.key !== 'Enter' || event.shiftKey) {
+                return;
+            }
+
+            event.preventDefault();
+
+            if (!form) {
+                return;
+            }
+
+            if (typeof form.requestSubmit === 'function') {
+                form.requestSubmit();
+            } else {
+                form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+            }
+        });
+    }
+
+    if (projectSearch) {
+        projectSearch.addEventListener('focus', openProjectList);
+
+        projectSearch.addEventListener('input', function () {
+            // Typing invalidates whatever was picked: the text no longer names it.
+            selectedProject = null;
+            projectSelect.value = '';
+
+            if (projectClear) {
+                projectClear.hidden = true;
+            }
+
+            clearProjectError();
+            openProjectList();
+        });
+
+        projectSearch.addEventListener('keydown', function (event) {
+            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                event.preventDefault();
+                openProjectList();
+                highlightOption(activeOption + (event.key === 'ArrowDown' ? 1 : -1));
+
+                return;
+            }
+
+            if (event.key === 'Enter') {
+                // Without this the form submits and the highlighted project is
+                // never chosen.
+                event.preventDefault();
+
+                var options = projectList ? projectList.querySelectorAll('.combobox-option') : [];
+                var option = options[activeOption];
+
+                if (option) {
+                    pickProject(option.dataset.id, option.dataset.name);
+                } else {
+                    closeProjectList();
+                }
+
+                return;
+            }
+
+            if (event.key === 'Escape') {
+                // The palette also listens for Escape on document; stop it here so
+                // the first Escape only closes this list.
+                event.stopPropagation();
+                closeProjectList();
+            }
+        });
+
+        projectSearch.addEventListener('blur', function () {
+            // A picked option is handled on mousedown, so a blur here means the
+            // user really left the field. The delay lets that click land.
+            setTimeout(closeProjectList, 120);
+        });
+    }
+
+    if (projectClear) {
+        projectClear.addEventListener('click', function (event) {
+            event.preventDefault();
+            clearProject();
+        });
     }
 
     renderTemplates(STATIC_TEMPLATES);

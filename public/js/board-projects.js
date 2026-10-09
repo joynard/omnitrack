@@ -287,7 +287,12 @@
         var project = byId(id);
         var name = project ? project.name : 'project ini';
 
-        if (!window.confirm('Hapus "' + name + '" beserta seluruh modulnya?')) {
+        var confirmed = await window.Omnitrack.confirm(
+            'Hapus "' + name + '" beserta seluruh modulnya?',
+            { title: 'Hapus project', confirmLabel: 'Hapus', danger: true }
+        );
+
+        if (!confirmed) {
             return;
         }
 
@@ -330,7 +335,13 @@
     }
 
     async function deleteModule(moduleId) {
-        if (!window.confirm('Hapus modul ini?')) {
+        var confirmed = await window.Omnitrack.confirm('Hapus modul ini?', {
+            title: 'Hapus modul',
+            confirmLabel: 'Hapus',
+            danger: true
+        });
+
+        if (!confirmed) {
             return;
         }
 
@@ -472,7 +483,9 @@
 
     async function renameCategory(id) {
         var name = categoryName(id);
-        var next = window.prompt('Nama kategori baru:', name || '');
+        var next = await window.Omnitrack.prompt('Nama kategori baru:', name || '', {
+            title: 'Ubah nama kategori'
+        });
 
         if (next === null) {
             return;
@@ -516,7 +529,12 @@
     async function deleteCategory(id) {
         var name = categoryName(id);
 
-        if (!window.confirm('Hapus kategori "' + name + '"? Project di dalamnya tidak terhapus.')) {
+        var confirmed = await window.Omnitrack.confirm(
+            'Hapus kategori "' + name + '"? Project di dalamnya tidak terhapus.',
+            { title: 'Hapus kategori', confirmLabel: 'Hapus', danger: true }
+        );
+
+        if (!confirmed) {
             return;
         }
 

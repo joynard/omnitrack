@@ -118,32 +118,32 @@ thousands of small reads crossing the 9p boundary on every request.
 - Run the suite after every change. It is the fastest verification available and
   costs no rebuild.
 
-### Known pre-existing test failures: 33 pass, 16 fail
+### The suite passes: 94 passed, 0 failed
 
-The suite does **not** pass on a clean checkout. This is an application test gap,
-not a harness problem, and it predates the dev overlay. Do not treat a red suite
-as evidence that your change broke something -- compare against this list.
+Historically this repository shipped with 16 failing tests and a long note here
+explaining why they were "pre-existing". That is over. **Run the suite and expect
+green.** A red suite is now evidence that your change broke something.
 
-Root cause: `routes/web.php` wraps `/` and everything under `/projects`,
-`/board/*`, `/ai/*` and `/sync/*` in `Route::middleware('auth')`, but
-`WebBoardTest`, `WorkspaceControlTest` and part of `HarnessApiTest` issue
-requests **without** `actingAs()` or a seeded user. The app therefore redirects
-to `/login` (302) or answers 401, and the assertions fail on that instead of on
-their actual subject.
+What those 16 actually were, because the old note got two of the causes wrong:
 
-Two secondary causes in the same group:
-
-- `project_modules.project_id` and `tasks.title` arrive null in reorder tests,
-  because the models under test are inserted with only `order_index` set.
-- `HarnessApiTest` reorder endpoints answer 422 -- the request payload does not
-  satisfy the validator.
-
-Groups that genuinely pass: `Unit\EnumNormalizationTest`,
-`Feature\GoogleSheetServiceTest`, and the token-authenticated harness tests.
-
-Fixing these means adding `actingAs()` and factory attributes to the tests. That
-is application work, and it has not been done -- do not report the suite as
-green.
+- **11 board tests** failed at 302/401 because `routes/web.php` puts `/`,
+  `/projects`, `/board/*`, `/ai/*` and `/sync/*` behind `auth` while
+  `WebBoardTest` and `WorkspaceControlTest` never signed a user in. Fixed with a
+  `setUp()` that calls `actingAs(User::factory()->create())`.
+- **4 reorder tests** failed with `NOT NULL constraint failed: projects.name`
+  (same for `tasks.title`, `project_modules.project_id`). The old note blamed the
+  tests for inserting models with only `order_index` set. That was wrong: the
+  cause was `reorderByIds()` calling `upsert()`, which proposes a whole INSERT
+  tuple and therefore requires every NOT NULL column to be present. It is now a
+  single `CASE` expression in `app/Models/Concerns/ReordersByIds.php`, and that
+  expression writes `cast(? as integer)` because PostgreSQL otherwise infers the
+  bound parameter as `text` and refuses the assignment -- SQLite alone would not
+  have caught it.
+- **2 stale assertions**, updated to match deliberate application decisions:
+  `HarnessApiTest` expected a top-level `created_count` that no route ever
+  returned, and `WebBoardTest` expected the literal "AI Command Palette" when the
+  view renders "AI Palette". `WebBoardTest` also called `$this->seed()` for
+  palette presets that `DatabaseSeeder` deliberately no longer creates.
 
 ## Known traps
 
@@ -151,8 +151,16 @@ green.
   runs `config:cache` and `route:cache`, baking current env values into the
   container so later `.env` edits silently stop taking effect.
 - **OPcache in the image has `validate_timestamps=0`** (correct for production).
-  `docker/php.dev.ini` overrides it to `1` with `revalidate_freq=0`. If edits
-  ever appear not to apply, check that this file is still mounted.
+  `docker/php.dev.ini` overrides it to `1` with `revalidate_freq=0` -- but it MUST
+  be mounted as `zz-dev.ini`, not `99-dev.ini`. PHP loads `conf.d` in alphabetical
+  order and the image's own file is `99-omnitrack.ini`, so a `99-dev.ini` sorted
+  FIRST and lost every shared directive, silently leaving
+  `validate_timestamps=Off` in the dev stack. This note used to say "check that
+  the file is still mounted", which was the wrong remedy: the mount was always
+  fine and the ordering was the bug. Symptom to recognise it by: PHP edits appear
+  not to apply, yet a fresh CLI process (`artisan route:list`) sees the new code
+  while HTTP does not. Fixed 2026-10-09 -- the dev overlay mounts `zz-dev.ini` in
+  `app`, `telegram` and `test`.
 - **`.env` has `DB_CONNECTION=sqlite`** for host/legacy use and
   `DB_DATABASE_PGSQL=omnitrack`. Compose injects the real Postgres settings and
   those environment values win over `.env`. Do not "fix" `.env` to match.
@@ -205,16 +213,19 @@ Verified gaps as of the initial commit:
    schedules `SyncGoogleSheetJob` hourly, but `docker/supervisord.conf` defines
    only php-fpm, nginx and queue-worker. There is no `schedule:work` program, so
    hourly sheet sync never fires. `README.md` acknowledges this.
-3. **The database is never seeded on deploy, so a fresh production instance is
-   unusable.** `docker/entrypoint.sh` runs `migrate --force` and nothing else.
-   `DatabaseSeeder` is the only thing that creates the single login account, the
-   starting categories, the `SheetSource` row and the six `AiPromptTemplate`
-   presets -- so without it there is no account to log in with, and the Ctrl+P
-   command palette is empty. The README's Koyeb section does not mention
-   `db:seed`, nor the `OMNITRACK_USER_*` variables the seeder reads.
+3. **The database is never seeded on deploy, so a fresh production instance has
+   no login.** `docker/entrypoint.sh` runs `migrate --force` and nothing else.
+   `DatabaseSeeder` creates **only** the single login account -- deliberately, see
+   its class comment: the starting categories, the `SheetSource` row and the six
+   palette presets used to be seeded too and were removed, because
+   `migrate:fresh --seed` is the documented reset command and would otherwise
+   wipe real projects just to recreate fixtures. So a deploy needs one
+   `db:seed` for the account, and the Ctrl+P palette legitimately starts empty.
+   The README's Koyeb section does not mention `db:seed`, nor the
+   `OMNITRACK_USER_*` variables the seeder reads.
 4. **No CI.** The `testing` Dockerfile target exists for exactly this purpose
-   but nothing invokes it. Note the suite is currently 16 failing (see above),
-   so a naive CI job would be red on arrival.
+   but nothing invokes it. The suite is green as of the bulk-CRUD work (94
+   passing), so a CI job is now viable -- see the testing section above.
 5. **Not deployed.** Nothing in this repository has been run with
    `APP_ENV=production`; all verification to date is local-only.
 

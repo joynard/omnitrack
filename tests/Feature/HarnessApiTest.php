@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Project;
+use App\Models\ProjectModule;
 use App\Models\Task;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -75,7 +76,11 @@ class HarnessApiTest extends TestCase
                 ],
             ])
             ->assertStatus(201)
-            ->assertJsonPath('created_count', 2);
+            // The endpoint returns the documented `{status, message, data}`
+            // envelope like every other route, so `created_count` was never a
+            // top-level key and this assertion could not have passed. Assert the
+            // count where it actually lives.
+            ->assertJsonCount(2, 'data.modules');
 
         $this->assertDatabaseHas('project_modules', [
             'project_id' => $project->id,
@@ -184,8 +189,8 @@ class HarnessApiTest extends TestCase
     public function test_modules_can_be_updated_deleted_and_reordered_via_harness(): void
     {
         $project = Project::factory()->create();
-        $first = \App\Models\ProjectModule::factory()->create(['project_id' => $project->id, 'order_index' => 0]);
-        $second = \App\Models\ProjectModule::factory()->create(['project_id' => $project->id, 'order_index' => 1]);
+        $first = ProjectModule::factory()->create(['project_id' => $project->id, 'order_index' => 0]);
+        $second = ProjectModule::factory()->create(['project_id' => $project->id, 'order_index' => 1]);
 
         $this->withToken('test-harness-token')
             ->postJson("/api/harness/modules/{$first->id}", ['status' => 'selesai', 'priority' => 'p1'])
@@ -244,7 +249,7 @@ class HarnessApiTest extends TestCase
     public function test_project_can_be_deleted_with_its_modules(): void
     {
         $project = Project::factory()->create();
-        \App\Models\ProjectModule::factory()->count(2)->create(['project_id' => $project->id]);
+        ProjectModule::factory()->count(2)->create(['project_id' => $project->id]);
 
         $this->withToken('test-harness-token')
             ->deleteJson("/api/harness/projects/{$project->id}")

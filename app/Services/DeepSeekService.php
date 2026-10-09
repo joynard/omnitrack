@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
@@ -170,7 +171,7 @@ class DeepSeekService
 
     /**
      * @param  array<string, mixed>  $payload
-     * @return \Illuminate\Http\Client\Response
+     * @return Response
      */
     private function post(array $payload)
     {

@@ -6,7 +6,7 @@
     <div class="page-head">
         <div>
             <h1>Projects</h1>
-            <p class="meta hide-mobile">Tekan <span class="kbd-inline">Ctrl</span> + <span class="kbd-inline">P</span> untuk mengatur apa saja lewat AI.</p>
+            <p class="meta hide-mobile">Tekan <span class="kbd-inline">Ctrl</span> + <span class="kbd-inline">P</span> untuk mengatur apa saja lewat Apollo.</p>
         </div>
         {{-- Where this button sits depends on the viewport:
              mobile  -> moved into the nav row, aligned with Projects / Tasks
@@ -40,11 +40,22 @@
         </div>
     </div>
 
+    {{-- Numbers above, chart below: both come from /board/summary via
+         progress.js. The stat cards used to render "—" forever because nothing
+         ever read data-stat. --}}
+    <div class="card progress-card" data-collapse="projects-progress" data-collapse-default="closed">
+        <div class="card-head">
+            <h2>Penyelesaian</h2>
+        </div>
+        <div class="progress-panel" id="progress-panel"
+             data-progress="projects,modules,categories"></div>
+    </div>
+
     <div class="category-bar" id="category-bar">
         <button type="button" class="category-chip is-active" data-category-filter="">Semua</button>
     </div>
 
-    <div class="card">
+    <div class="card" data-collapse="projects-add" data-collapse-default="closed">
         <div class="card-head">
             <h2>Tambah Project</h2>
             <button type="button" class="btn btn-secondary btn-sm" id="category-manage-toggle">Kelola Kategori</button>
@@ -108,7 +119,7 @@
         </div>
     </div>
 
-    <div class="card" style="padding:0">
+    <div class="card" style="padding:0" data-collapse="projects-list" data-collapse-default="open">
         <div class="card-head" style="padding:16px 16px 0;margin-bottom:10px">
             <h2 id="projects-heading">Semua Project</h2>
             <span class="card-note">Tarik baris untuk mengubah urutan.</span>

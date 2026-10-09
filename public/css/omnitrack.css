@@ -918,7 +918,11 @@ table.data tbody tr[draggable="true"] {
     border: 1px solid var(--line-light);
     border-radius: 6px;
     box-shadow: var(--shadow);
-    overflow: hidden;
+    /* Visible, NOT hidden: the project dropdown has to float over the fields
+       below it. Clipping the parent was what forced the list into the flow and
+       made the whole dialog stretch downwards. The rounded bottom corner is kept
+       by rounding .palette-foot instead. */
+    overflow: visible;
 }
 
 .dialog {
@@ -989,24 +993,47 @@ table.data tbody tr[draggable="true"] {
 
 .palette-head h2 {
     font-size: 13px;
-    font-weight: 600;
+    /* Bold and full contrast: this is the assistant's name now, not a muted
+       section label above a panel. */
+    font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    color: var(--ink-secondary);
+    color: var(--ink-primary);
 }
 
 .palette-body {
     padding: 16px;
+    /* No scroll container here on purpose: it would clip the absolutely
+       positioned project dropdown, which is the whole point of floating it. If
+       the palette ever outgrows the viewport, .overlay -- already scrollable --
+       takes over. */
+    overflow: visible;
 }
 
 .palette-input {
+    display: block;
     font-size: 14px;
     padding: 10px 12px;
+    line-height: 1.5;
+    /* Grown by palette.js, so the drag handle would only fight the script. */
+    resize: none;
+    overflow-y: auto;
+    /* One row: 1.5 line-height x 14px + 20px padding + 2px border. `.textarea`
+       ships min-height:72px, which would pin this at three rows forever. */
+    min-height: 43px;
+    /* The cap follows the viewport rather than a fixed pixel value: on a short
+       screen a tall field would push the picker and the footer out of reach.
+       220px stays the ceiling on a tall display. `dvh` accounts for mobile
+       browser chrome where supported; the `vh` line above it is the fallback. */
+    max-height: min(220px, 35vh);
+    max-height: min(220px, 35dvh);
 }
 
 .palette-row {
     display: flex;
-    align-items: flex-end;
+    /* flex-start, not flex-end: the project picker grows downwards when its list
+       opens, and with flex-end that dragged the Aksi select down with it. */
+    align-items: flex-start;
     gap: 10px;
     margin-top: 10px;
     flex-wrap: wrap;
@@ -1014,16 +1041,32 @@ table.data tbody tr[draggable="true"] {
 
 .palette-field {
     display: block;
+    /* Share the row evenly. Left to their content width the two fields huddled
+       on the left and left a dead gap on the right. min-width:0 lets them shrink
+       below content width instead of overflowing the row. */
+    flex: 1 1 240px;
+    min-width: 0;
+}
+
+/* .select-sm is width:auto so it can sit in a toolbar; inside the palette it has
+   to fill its column like the project input beside it. */
+.palette-field .select {
+    width: 100%;
 }
 
 .palette-foot {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    /* flex-end, not space-between: with the keyboard hint gone the buttons are
+       the only child left, and space-between would strand them on the left. */
+    justify-content: flex-end;
     gap: 10px;
     padding: 10px 16px;
     border-top: 1px solid var(--line-light);
     background: var(--canvas-light);
+    /* Carries the rounded corner now that .palette no longer clips: this strip
+       has a background, so without it the bottom corners would go square. */
+    border-radius: 0 0 5px 5px;
     flex-wrap: wrap;
 }
 
@@ -1355,6 +1398,411 @@ tr.is-failed {
     .label-short {
         display: inline;
     }
+}
+
+/* --------------------------------------------------------------------------
+   Toasts and modal confirmations
+   --------------------------------------------------------------------------
+   Both are driven by core.js: notify() appends .toast nodes to #toast-host, and
+   Omnitrack.confirm()/prompt() build an .overlay-dialog containing .modal. They
+   reuse the existing tokens, so all five themes follow automatically.
+   -------------------------------------------------------------------------- */
+
+.toast-host {
+    position: fixed;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    /* Above the dialogs (60) and the palette (50): a failure message must stay
+       readable even while a modal is open. */
+    z-index: 80;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    width: max-content;
+    max-width: min(92vw, 520px);
+    /* The empty strip between toasts must not swallow clicks on the page. */
+    pointer-events: none;
+}
+
+.toast {
+    pointer-events: auto;
+    border: 1px solid var(--line-light);
+    border-radius: var(--radius);
+    padding: 10px 14px;
+    font-size: 13px;
+    line-height: 1.45;
+    background: var(--canvas-card);
+    color: var(--ink-primary);
+    box-shadow: var(--shadow);
+    cursor: pointer;
+    max-width: 100%;
+    animation: toast-in 180ms ease-out;
+}
+
+.toast.is-leaving {
+    animation: toast-out 180ms ease-in forwards;
+}
+
+.toast.is-success {
+    background: var(--badge-done-bg);
+    border-color: var(--badge-done-line);
+    color: var(--badge-done-text);
+}
+
+.toast.is-error {
+    background: var(--badge-urgent-bg);
+    border-color: var(--badge-urgent-line);
+    color: var(--badge-urgent-text);
+}
+
+.toast.is-skipped,
+.toast.is-loading {
+    background: var(--badge-pending-bg);
+    border-color: var(--badge-pending-line);
+    color: var(--badge-pending-text);
+}
+
+@keyframes toast-in {
+    from {
+        opacity: 0;
+        transform: translateY(-8px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes toast-out {
+    from {
+        opacity: 1;
+        transform: translateY(0);
+    }
+
+    to {
+        opacity: 0;
+        transform: translateY(-8px);
+    }
+}
+
+/* A confirm/prompt modal: the palette's chrome, sized for one decision. */
+.modal {
+    width: 100%;
+    max-width: 420px;
+    padding: 20px;
+    background: var(--canvas-card);
+    border: 1px solid var(--line-light);
+    border-radius: 6px;
+    box-shadow: var(--shadow);
+    animation: toast-in 160ms ease-out;
+}
+
+.modal-title {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--ink-primary);
+}
+
+.modal-message {
+    margin: 8px 0 0;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--ink-secondary);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.modal-field {
+    display: block;
+    margin-top: 14px;
+}
+
+.modal-field .input {
+    width: 100%;
+    margin-top: 6px;
+}
+
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 20px;
+}
+
+.btn-danger {
+    background: var(--badge-urgent-bg);
+    border-color: var(--badge-urgent-line);
+    color: var(--badge-urgent-text);
+}
+
+.btn-danger:hover:not(:disabled) {
+    background: var(--badge-urgent-line);
+    border-color: var(--badge-urgent-text);
+}
+
+/* --------------------------------------------------------------------------
+   Searchable project picker (AI palette)
+   --------------------------------------------------------------------------
+   A <select> cannot be typed into, and its empty option read as "the last
+   project" while actually meaning "no project". This is the ARIA 1.2 combobox
+   pattern, hand-rolled so the palette keeps working with no build step.
+   -------------------------------------------------------------------------- */
+
+.combobox {
+    position: relative;
+}
+
+.combobox-input {
+    width: 100%;
+    /* Room for the clear button. */
+    padding-right: 30px;
+}
+
+.combobox-clear {
+    position: absolute;
+    top: 50%;
+    right: 6px;
+    transform: translateY(-50%);
+    padding: 2px 6px;
+    border: 0;
+    background: transparent;
+    color: var(--ink-muted);
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.combobox-clear:hover {
+    color: var(--ink-primary);
+}
+
+/* Floated, not in flow: the dialog must keep its size while this opens, so the
+   list sits above the fields below it instead of pushing them down. */
+.combobox-list {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    right: 0;
+    z-index: 10;
+    list-style: none;
+    margin: 0;
+    padding: 4px;
+    max-height: 200px;
+    overflow-y: auto;
+    background: var(--canvas-card);
+    border: 1px solid var(--line-light);
+    border-radius: var(--radius);
+    /* The full shadow, not --shadow-sm: this now overlaps live content and has
+       to read as a layer above it. */
+    box-shadow: var(--shadow);
+}
+
+.combobox-list[hidden] {
+    display: none;
+}
+
+.combobox-option {
+    padding: 7px 9px;
+    border-radius: var(--radius);
+    font-size: 13px;
+    color: var(--ink-primary);
+    cursor: pointer;
+    /* One line per project, truncated: "Omnitrack (Projects & Event Management)"
+       would otherwise wrap and double the height of the list. */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.combobox-option.is-active,
+.combobox-option:hover {
+    background: var(--canvas-subtle);
+}
+
+/* The global entry reads as a mode rather than as one more project. */
+.combobox-option.is-global {
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--line-light);
+    border-radius: 0;
+    font-weight: 600;
+    color: var(--ink-secondary);
+}
+
+.combobox-empty {
+    padding: 7px 9px;
+    font-size: 12px;
+    color: var(--ink-muted);
+}
+
+/* The project field is mandatory wherever it is shown: label marker, plus the
+   state a failed submit leaves behind. */
+.field-required {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--badge-urgent-text);
+}
+
+.palette-field.is-required .field-label {
+    color: var(--badge-urgent-text);
+}
+
+.palette-field.is-required .combobox-input {
+    border-color: var(--badge-urgent-line);
+}
+
+/* --------------------------------------------------------------------------
+   Completion chart (Projects + Tasks)
+   --------------------------------------------------------------------------
+   Painted by progress.js from /board/summary. The `bar-` prefix keeps it clear
+   of the per-row `.progress` component used inside the project table.
+   -------------------------------------------------------------------------- */
+
+.progress-card {
+    margin-bottom: 14px;
+}
+
+.progress-panel {
+    padding: 4px 0 0;
+}
+
+.bar-group-title {
+    margin: 18px 0 10px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-secondary);
+}
+
+.bar-row + .bar-row {
+    margin-top: 12px;
+}
+
+.bar-row-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 5px;
+}
+
+.bar-row-label {
+    font-size: 13px;
+    color: var(--ink-primary);
+}
+
+.bar-row-value {
+    font-size: 12px;
+    color: var(--ink-muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.bar-track {
+    display: flex;
+    height: 10px;
+    overflow: hidden;
+    background: var(--canvas-subtle);
+    border-radius: 999px;
+}
+
+.bar-seg {
+    height: 100%;
+    transition: width 220ms ease-out;
+}
+
+/* Solid status colours, not the pale badge backgrounds: these have to read as
+   a chart at 10px tall. */
+.bar-seg.is-done,
+.legend-swatch.is-done {
+    background: var(--badge-done-text);
+}
+
+.bar-seg.is-progress,
+.legend-swatch.is-progress {
+    background: var(--badge-progress-text);
+}
+
+.bar-seg.is-pending,
+.legend-swatch.is-pending {
+    background: var(--badge-pending-line);
+}
+
+.bar-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 14px;
+    font-size: 11px;
+    color: var(--ink-muted);
+}
+
+.legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.legend-swatch {
+    width: 9px;
+    height: 9px;
+    border-radius: 3px;
+}
+
+/* --------------------------------------------------------------------------
+   Collapsible cards
+   --------------------------------------------------------------------------
+   core.js injects the toggle into .card-head; the state is a class on the card.
+   -------------------------------------------------------------------------- */
+
+.card-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    /* Icon-only, so it is sized as a square target instead of growing around a
+       word. Pushed right whatever else the head contains, so the toggle lands in
+       the same place from card to card. */
+    width: 26px;
+    height: 26px;
+    margin-left: auto;
+    padding: 0;
+    border: 1px solid var(--line-light);
+    border-radius: var(--radius);
+    background: transparent;
+    color: var(--ink-secondary);
+    cursor: pointer;
+}
+
+.card-toggle:hover {
+    border-color: var(--line-active);
+    color: var(--ink-primary);
+}
+
+/* A caret drawn in borders: points down when open, right when collapsed. */
+.card-toggle-icon {
+    width: 0;
+    height: 0;
+    border-left: 5px solid currentColor;
+    border-top: 5px solid transparent;
+    border-bottom: 5px solid transparent;
+    transform: rotate(90deg);
+    transition: transform 160ms ease-out;
+}
+
+.card.is-collapsed .card-toggle-icon {
+    transform: rotate(0deg);
+}
+
+/* Everything except the head is the collapsible body. Written as :not() rather
+   than a .card-body wrapper so no view has to be restructured. */
+.card.is-collapsed > :not(.card-head) {
+    display: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

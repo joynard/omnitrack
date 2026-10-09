@@ -4,6 +4,8 @@ namespace App\Models;
 
 use App\Enums\ItemPriority;
 use App\Enums\ItemStatus;
+use App\Models\Concerns\ReordersByIds;
+use Database\Factories\ProjectModuleFactory;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -11,8 +13,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ProjectModule extends Model
 {
-    /** @use HasFactory<\Database\Factories\ProjectModuleFactory> */
-    use HasFactory, HasUlids;
+    /** @use HasFactory<ProjectModuleFactory> */
+    use HasFactory, HasUlids, ReordersByIds;
 
     protected $fillable = [
         'project_id',
@@ -38,34 +40,5 @@ class ProjectModule extends Model
     public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class);
-    }
-
-    /**
-     * Apply a complete id => position map in one statement.
-     *
-     * Shared by every reorder path (AI, board UI, harness API) so ordering has
-     * exactly one implementation, and a single statement avoids N queries.
-     *
-     * @param  array<string, int>  $positions
-     */
-    public static function reorderByIds(array $positions): void
-    {
-        if ($positions === []) {
-            return;
-        }
-
-        $now = now();
-
-        $rows = [];
-        foreach ($positions as $id => $position) {
-            $rows[] = [
-                'id' => (string) $id,
-                'order_index' => (int) $position,
-                'updated_at' => $now,
-            ];
-        }
-
-        // upsert() touches only the listed columns; the unique key is the ULID.
-        static::upsert($rows, ['id'], ['order_index', 'updated_at']);
     }
 }

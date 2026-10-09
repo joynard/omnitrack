@@ -6,18 +6,28 @@ use App\Models\Category;
 use App\Models\Project;
 use App\Models\ProjectModule;
 use App\Models\Task;
+use App\Models\User;
 use App\Services\AiOrchestrator;
+use App\Services\WorkspaceTools;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 /**
  * The mutation surface shared by the AI palette, the Blade UI and the harness
- * API. These tests exercise AiOrchestrator::callTool() directly, so they cover
- * every caller without needing DeepSeek to be reachable.
+ * API. Most of these exercise AiOrchestrator::callTool() directly, so they cover
+ * every caller without needing DeepSeek to be reachable; the reorder cases go
+ * over HTTP instead and therefore need a signed-in user.
  */
 class WorkspaceControlTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->actingAs(User::factory()->create());
+    }
 
     private function orchestrator(): AiOrchestrator
     {
@@ -249,7 +259,7 @@ class WorkspaceControlTest extends TestCase
 
     public function test_tool_schema_is_exposed_and_well_formed(): void
     {
-        $tools = \App\Services\WorkspaceTools::all();
+        $tools = WorkspaceTools::all();
 
         $this->assertNotEmpty($tools);
 
@@ -261,8 +271,8 @@ class WorkspaceControlTest extends TestCase
         }
 
         // Every declared tool must be routable through the orchestrator.
-        foreach (\App\Services\WorkspaceTools::names() as $name) {
-            $this->assertContains($name, \App\Services\WorkspaceTools::names());
+        foreach (WorkspaceTools::names() as $name) {
+            $this->assertContains($name, WorkspaceTools::names());
         }
     }
 }

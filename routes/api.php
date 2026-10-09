@@ -26,6 +26,14 @@ Route::prefix('harness')
         // Natural language: the same full-control agent the palette uses.
         Route::post('/agent', [HarnessController::class, 'agent'])->name('agent');
 
+        // Bulk mutation. Declared before the {wildcard} routes below so the
+        // literal `bulk` segment is never captured as a model id.
+        Route::post('/categories/bulk', [HarnessController::class, 'bulkCategories'])->name('categories.bulk');
+        Route::post('/categories/reorder', [HarnessController::class, 'reorderCategories'])->name('categories.reorder');
+        Route::post('/projects/bulk', [HarnessController::class, 'bulkProjects'])->name('projects.bulk');
+        Route::post('/modules/bulk', [HarnessController::class, 'bulkModules'])->name('modules.bulk');
+        Route::post('/tasks/bulk', [HarnessController::class, 'bulkTasks'])->name('tasks.bulk');
+
         // Categories.
         Route::get('/categories', [HarnessController::class, 'categories'])->name('categories');
         Route::post('/categories', [HarnessController::class, 'storeCategory'])->name('categories.store');

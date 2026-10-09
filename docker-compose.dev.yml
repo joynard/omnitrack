@@ -57,7 +57,35 @@ services:
             - ./storage/app/google:/var/www/html/storage/app/google
 
             # 4. Development PHP settings, layered after the image's 99-*.ini.
-            - ./docker/php.dev.ini:/usr/local/etc/php/conf.d/99-dev.ini:ro
+            # WHY the target is zz-dev.ini and not 99-dev.ini: conf.d loads
+            # alphabetically and the image ships 99-omnitrack.ini, so a 99-dev.ini
+            # was loaded FIRST and lost every shared directive -- including
+            # opcache.validate_timestamps, which is why PHP edits used to need a
+            # container restart to take effect.
+            - ./docker/php.dev.ini:/usr/local/etc/php/conf.d/zz-dev.ini:ro
+
+    # -----------------------------------------------------------------------
+    # The Telegram poller needs the working tree just as much as `app` does:
+    # without this it would run the code baked into the image, and every edit to
+    # TelegramBot.php would silently need a rebuild to take effect.
+    #
+    # Same volume set, for the same reasons. storage/framework is shared with
+    # `app` on purpose -- the two PHP processes then share one compiled-view and
+    # cache directory instead of fighting over two.
+    # -----------------------------------------------------------------------
+    telegram:
+        volumes:
+            - ./:/var/www/html
+            - dev-vendor:/var/www/html/vendor
+            - dev-storage:/var/www/html/storage/framework
+            - dev-logs:/var/www/html/storage/logs
+            - ./storage/app/google:/var/www/html/storage/app/google
+            # WHY the target is zz-dev.ini and not 99-dev.ini: conf.d loads
+            # alphabetically and the image ships 99-omnitrack.ini, so a 99-dev.ini
+            # was loaded FIRST and lost every shared directive -- including
+            # opcache.validate_timestamps, which is why PHP edits used to need a
+            # container restart to take effect.
+            - ./docker/php.dev.ini:/usr/local/etc/php/conf.d/zz-dev.ini:ro
 
     # -----------------------------------------------------------------------
     # Test runner: the `testing` Dockerfile target (runtime + dev deps) with the
@@ -89,7 +117,12 @@ services:
         volumes:
             - ./:/var/www/html
             - dev-vendor:/var/www/html/vendor
-            - ./docker/php.dev.ini:/usr/local/etc/php/conf.d/99-dev.ini:ro
+            # WHY the target is zz-dev.ini and not 99-dev.ini: conf.d loads
+            # alphabetically and the image ships 99-omnitrack.ini, so a 99-dev.ini
+            # was loaded FIRST and lost every shared directive -- including
+            # opcache.validate_timestamps, which is why PHP edits used to need a
+            # container restart to take effect.
+            - ./docker/php.dev.ini:/usr/local/etc/php/conf.d/zz-dev.ini:ro
         # NOTE: deliberately no depends_on. The test suite runs on in-memory
         # SQLite, so bringing the dev stack up must never be blocked waiting for
         # Postgres, and the test service must run even when `db` is down.

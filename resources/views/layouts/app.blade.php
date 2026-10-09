@@ -57,7 +57,7 @@
         {{-- Mobile only (desktop has Ctrl + P). Kept in its own container so the
              show/hide rules for the page action cannot clash with it. --}}
         <div class="head-actions topbar-actions" id="topbar-actions">
-            <button type="button" class="btn btn-secondary btn-sm" data-palette-open>AI</button>
+            <button type="button" class="btn btn-secondary btn-sm" data-palette-open>Apollo</button>
         </div>
 
         {{-- Page actions are relocated here on mobile by core.js. --}}
@@ -71,7 +71,6 @@
 </header>
 
 <main class="main">
-    <div id="flash-host"></div>
     @yield('content')
 </main>
 
@@ -79,14 +78,16 @@
 <div class="overlay" id="palette-overlay" hidden>
     <div class="palette" role="dialog" aria-modal="true" aria-labelledby="palette-heading">
         <div class="palette-head">
-            <h2 id="palette-heading">AI Palette</h2>
+            <h2 id="palette-heading">Apollo</h2>
             <span class="meta">Esc untuk menutup</span>
         </div>
 
         <div class="palette-body">
             <form id="palette-form" autocomplete="off">
-                <input class="input palette-input" id="palette-prompt" name="prompt" type="text"
-                       placeholder="Tulis instruksi apa saja, mis. &quot;pindahkan project ini ke kategori Kantor&quot;">
+                {{-- A textarea, not an input: instructions are often a sentence or
+                     two, and palette.js grows it with the content. --}}
+                <textarea class="textarea palette-input" id="palette-prompt" name="prompt" rows="1"
+                          placeholder="Tulis instruksi apa saja, mis. &quot;pindahkan project ini ke kategori Kantor&quot;"></textarea>
 
                 <div class="palette-row">
                     <label class="palette-field">
@@ -100,12 +101,31 @@
                         </select>
                     </label>
 
-                    <label class="palette-field" id="palette-project-field" hidden>
-                        <span class="field-label">Project</span>
-                        <select class="select select-sm" id="palette-project" name="project_id">
-                            <option value="">Memuat…</option>
-                        </select>
-                    </label>
+                    {{-- Searchable project picker. A <select> was unusable once the
+                         workspace passed a couple of dozen projects: no way to
+                         type-to-find, and its default option silently meant "no
+                         project" while reading as "the last one". --}}
+                    <div class="palette-field" id="palette-project-field" hidden>
+                        <span class="field-label" id="palette-project-label">
+                            Target <span class="field-required">wajib</span>
+                        </span>
+
+                        <div class="combobox">
+                            <input class="input combobox-input" id="palette-project-search"
+                                   type="text" role="combobox" autocomplete="off" spellcheck="false"
+                                   aria-expanded="false" aria-controls="palette-project-list"
+                                   aria-autocomplete="list" aria-labelledby="palette-project-label"
+                                   aria-required="true" placeholder="Cari project…">
+                            <button type="button" class="combobox-clear" id="palette-project-clear" hidden
+                                    aria-label="Kosongkan pilihan project">&times;</button>
+                            <ul class="combobox-list" id="palette-project-list" role="listbox" hidden></ul>
+                        </div>
+
+                        {{-- The id the palette actually submits. Keeping it as an
+                             input means submit() reads one value, whether it came
+                             from a click, the arrow keys, or a clear. --}}
+                        <input type="hidden" id="palette-project" name="project_id" value="">
+                    </div>
                 </div>
             </form>
 
@@ -120,10 +140,6 @@
         </div>
 
         <div class="palette-foot">
-            <span class="meta">
-                <span class="kbd-inline">Ctrl</span> + <span class="kbd-inline">P</span> buka
-                · <span class="kbd-inline">Enter</span> jalankan
-            </span>
             <span class="palette-actions">
                 <button type="button" class="btn btn-secondary btn-sm" id="palette-close">Tutup</button>
                 <button type="submit" class="btn btn-primary btn-sm" id="palette-submit" form="palette-form">
@@ -136,6 +152,7 @@
 
 <script src="{{ asset('js/core.js') }}"></script>
 <script src="{{ asset('js/palette.js') }}"></script>
+<script src="{{ asset('js/progress.js') }}"></script>
 @stack('scripts')
 </body>
 </html>

@@ -6,11 +6,19 @@
     <div class="page-head">
         <div>
             <h1>Tasks</h1>
-            <p class="meta">Checklist pribadi, terpisah dari project.</p>
+            <p class="meta">Checklist pribadi.</p>
         </div>
     </div>
 
-    <div class="card">
+    {{-- Painted by progress.js from /board/summary. --}}
+    <div class="card progress-card" data-collapse="tasks-progress" data-collapse-default="closed">
+        <div class="card-head">
+            <h2>Penyelesaian</h2>
+        </div>
+        <div class="progress-panel" id="progress-panel" data-progress="tasks"></div>
+    </div>
+
+    <div class="card" data-collapse="tasks-add" data-collapse-default="closed">
         <div class="card-head">
             <h2>Tambah Task</h2>
         </div>
@@ -44,7 +52,7 @@
         </form>
     </div>
 
-    <div class="card" style="padding:0">
+    <div class="card" style="padding:0" data-collapse="tasks-list" data-collapse-default="open">
         <div class="card-head" style="padding:16px 16px 0;margin-bottom:10px">
             <h2>Daftar Task</h2>
             <div class="head-actions">

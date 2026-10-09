@@ -93,26 +93,241 @@
         };
     }
 
-    /** Transient page-level notice shown above the board. */
-    function notify(message, kind, timeoutMs) {
-        var host = document.getElementById('flash-host');
+    /* ---------------------------------------------------------------------
+       Toasts
+       ---------------------------------------------------------------------
+       Every transient message in the app goes through notify(). Toasts stack at
+       the top centre of the viewport: the newest message is always in the same
+       place, and a burst of saves cannot push the board around the way an
+       in-flow notice does.
+    */
+    var TOAST_LIMIT = 4;
+
+    function toastHost() {
+        var host = document.getElementById('toast-host');
 
         if (!host) {
+            host = document.createElement('div');
+            host.id = 'toast-host';
+            host.className = 'toast-host';
+            host.setAttribute('aria-live', 'polite');
+            document.body.appendChild(host);
+        }
+
+        return host;
+    }
+
+    function dismissToast(toast) {
+        if (!toast || toast.dataset.leaving === '1') {
             return;
         }
 
-        host.innerHTML = '';
+        toast.dataset.leaving = '1';
+        toast.classList.add('is-leaving');
 
-        var box = document.createElement('div');
-        box.className = 'flash is-' + (kind || 'success');
-        box.textContent = message;
-        host.appendChild(box);
+        // Matches the CSS exit transition; remove() alone would cut it off.
+        setTimeout(function () {
+            toast.remove();
+        }, 200);
+    }
 
-        if (timeoutMs !== 0) {
-            setTimeout(function () {
-                box.remove();
-            }, timeoutMs || 5000);
+    /** Transient notice, stacked at the top centre of the viewport. */
+    function notify(message, kind, timeoutMs) {
+        var host = toastHost();
+        var toast = document.createElement('div');
+
+        toast.className = 'toast is-' + (kind || 'success');
+        // An error interrupts on purpose; a save confirmation must not.
+        toast.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+        toast.textContent = message;
+        toast.title = 'Klik untuk menutup';
+        toast.addEventListener('click', function () {
+            dismissToast(toast);
+        });
+
+        host.appendChild(toast);
+
+        // Drop the oldest rather than letting a loop of failures cover the page.
+        while (host.children.length > TOAST_LIMIT) {
+            dismissToast(host.firstElementChild);
         }
+
+        var ms = timeoutMs === undefined || timeoutMs === null ? 4500 : timeoutMs;
+
+        if (ms !== 0) {
+            setTimeout(function () {
+                dismissToast(toast);
+            }, ms);
+        }
+
+        return toast;
+    }
+
+    /* ---------------------------------------------------------------------
+       Modal dialogs
+       ---------------------------------------------------------------------
+       window.confirm() and window.prompt() render the browser's own chrome,
+       which ignores the theme and cannot be styled. These replace them with the
+       app's modal and return promises, so call sites read the same way.
+    */
+
+    /**
+     * Build and show one dialog.
+     *
+     * @param {Object} config title, message, labels, danger flag, optional field
+     * @returns {Promise<?string>} null when dismissed, otherwise '' for a plain
+     *          confirm or the field value for a prompt.
+     */
+    function openDialog(config) {
+        return new Promise(function (resolve) {
+            var previousFocus = document.activeElement;
+            var overlay = document.createElement('div');
+            overlay.className = 'overlay overlay-dialog';
+
+            var modal = document.createElement('div');
+            modal.className = 'modal' + (config.danger ? ' is-danger' : '');
+            modal.setAttribute('role', 'dialog');
+            modal.setAttribute('aria-modal', 'true');
+
+            var titleId = 'modal-title-' + Date.now();
+            modal.setAttribute('aria-labelledby', titleId);
+
+            var title = document.createElement('h2');
+            title.className = 'modal-title';
+            title.id = titleId;
+            title.textContent = config.title || 'Konfirmasi';
+            modal.appendChild(title);
+
+            if (config.message) {
+                var message = document.createElement('p');
+                message.className = 'modal-message';
+                // textContent, never innerHTML: these strings carry project,
+                // module and category names typed by the user.
+                message.textContent = config.message;
+                modal.appendChild(message);
+            }
+
+            var input = null;
+
+            if (config.field) {
+                var field = document.createElement('label');
+                field.className = 'modal-field';
+
+                var fieldLabel = document.createElement('span');
+                fieldLabel.className = 'field-label';
+                fieldLabel.textContent = config.field.label;
+                field.appendChild(fieldLabel);
+
+                input = document.createElement('input');
+                input.className = 'input';
+                input.type = 'text';
+                input.value = config.field.value || '';
+                input.placeholder = config.field.placeholder || '';
+                field.appendChild(input);
+
+                modal.appendChild(field);
+            }
+
+            var actions = document.createElement('div');
+            actions.className = 'modal-actions';
+
+            var cancel = document.createElement('button');
+            cancel.type = 'button';
+            cancel.className = 'btn btn-secondary btn-sm';
+            cancel.textContent = config.cancelLabel || 'Batal';
+
+            var accept = document.createElement('button');
+            accept.type = 'button';
+            accept.className = 'btn ' + (config.danger ? 'btn-danger' : 'btn-primary') + ' btn-sm';
+            accept.textContent = config.confirmLabel || 'OK';
+
+            actions.appendChild(cancel);
+            actions.appendChild(accept);
+            modal.appendChild(actions);
+            overlay.appendChild(modal);
+            document.body.appendChild(overlay);
+
+            function close(value) {
+                document.removeEventListener('keydown', onKey, true);
+                overlay.remove();
+
+                // Return focus where it was, or the keyboard user is dropped at
+                // the top of the document after every confirmation.
+                if (previousFocus && typeof previousFocus.focus === 'function') {
+                    previousFocus.focus();
+                }
+
+                resolve(value);
+            }
+
+            function onKey(event) {
+                if (event.key === 'Escape') {
+                    event.preventDefault();
+                    close(null);
+                    return;
+                }
+
+                if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault();
+                    close(input ? input.value : '');
+                }
+            }
+
+            cancel.addEventListener('click', function () {
+                close(null);
+            });
+
+            accept.addEventListener('click', function () {
+                close(input ? input.value : '');
+            });
+
+            // Backdrop click cancels; a click inside the modal must not bubble.
+            overlay.addEventListener('mousedown', function (event) {
+                if (event.target === overlay) {
+                    close(null);
+                }
+            });
+
+            document.addEventListener('keydown', onKey, true);
+
+            (input || accept).focus();
+
+            if (input) {
+                input.select();
+            }
+        });
+    }
+
+    /** Promise-based window.confirm(). Resolves false when dismissed. */
+    async function confirm(message, options) {
+        options = options || {};
+
+        var answer = await openDialog({
+            title: options.title || 'Konfirmasi',
+            message: message,
+            confirmLabel: options.confirmLabel || 'OK',
+            cancelLabel: options.cancelLabel || 'Batal',
+            danger: options.danger === true
+        });
+
+        return answer !== null;
+    }
+
+    /** Promise-based window.prompt(). Resolves null when dismissed. */
+    function promptDialog(label, value, options) {
+        options = options || {};
+
+        return openDialog({
+            title: options.title || 'Ubah',
+            message: options.message || '',
+            confirmLabel: options.confirmLabel || 'Simpan',
+            cancelLabel: options.cancelLabel || 'Batal',
+            field: {
+                label: label,
+                value: value,
+                placeholder: options.placeholder || ''
+            }
+        });
     }
 
     function setBusy(button, busy, busyLabel) {
@@ -161,6 +376,8 @@
         formatDate: formatDate,
         debounce: debounce,
         notify: notify,
+        confirm: confirm,
+        prompt: promptDialog,
         setBusy: setBusy,
         errorMessage: errorMessage
     };
@@ -276,5 +493,86 @@
         } else if (typeof query.addListener === 'function') {
             query.addListener(place);
         }
+    })();
+
+    /* ---------------------------------------------------------------------
+       Collapsible cards
+       ---------------------------------------------------------------------
+       Any .card carrying data-collapse="<key>" gets a toggle injected into its
+       head, and everything after that head is hidden while collapsed -- no
+       markup has to be wrapped, which keeps the Blade views readable.
+
+       The choice lives in localStorage, so an explicit open survives a reload;
+       data-collapse-default only decides what a first visit looks like.
+    */
+    (function () {
+        var STORAGE_KEY = 'omnitrack.collapsed';
+        var cards = document.querySelectorAll('.card[data-collapse]');
+
+        if (!cards.length) {
+            return;
+        }
+
+        var stored = {};
+
+        try {
+            stored = JSON.parse(window.localStorage.getItem(STORAGE_KEY) || '{}') || {};
+        } catch (e) {
+            stored = {};
+        }
+
+        function persist() {
+            try {
+                window.localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
+            } catch (e) {
+                // Storage unavailable: the toggle still works for this view.
+            }
+        }
+
+        Array.prototype.forEach.call(cards, function (card) {
+            var head = card.querySelector('.card-head');
+
+            if (!head) {
+                return;
+            }
+
+            var key = card.dataset.collapse;
+            var closed = Object.prototype.hasOwnProperty.call(stored, key)
+                ? stored[key] === true
+                : card.dataset.collapseDefault === 'closed';
+
+            var toggle = document.createElement('button');
+            toggle.type = 'button';
+            toggle.className = 'card-toggle';
+
+            var icon = document.createElement('span');
+            icon.className = 'card-toggle-icon';
+            icon.setAttribute('aria-hidden', 'true');
+
+            toggle.appendChild(icon);
+
+            function apply() {
+                card.classList.toggle('is-collapsed', closed);
+                toggle.setAttribute('aria-expanded', closed ? 'false' : 'true');
+
+                // Icon-only by design, so the name has to come from somewhere:
+                // without it the button reaches a screen reader as an unlabelled
+                // control. Same string drives the hover tooltip.
+                var name = closed ? 'Tampilkan bagian ini' : 'Sembunyikan bagian ini';
+
+                toggle.setAttribute('aria-label', name);
+                toggle.title = name;
+            }
+
+            toggle.addEventListener('click', function () {
+                closed = !closed;
+                stored[key] = closed;
+                persist();
+                apply();
+            });
+
+            apply();
+            head.appendChild(toggle);
+        });
     })();
 })();

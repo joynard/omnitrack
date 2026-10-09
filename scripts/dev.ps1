@@ -20,6 +20,7 @@
     ./scripts/dev.ps1 tinker
     ./scripts/dev.ps1 logs app
     ./scripts/dev.ps1 sh
+    ./scripts/dev.ps1 telegram      # run the Telegram long-poll bot in the foreground
     ./scripts/dev.ps1 down
 #>
 
@@ -27,7 +28,7 @@
 param(
     [Parameter(Position = 0)]
     [ValidateSet('init', 'up', 'down', 'restart', 'build', 'test', 'artisan', 'tinker',
-                 'composer', 'npm', 'logs', 'ps', 'sh', 'fresh', 'config', 'help')]
+                 'composer', 'npm', 'logs', 'ps', 'sh', 'telegram', 'fresh', 'config', 'help')]
     [string]$Command = 'help',
 
     [Parameter(Position = 1, ValueFromRemainingArguments = $true)]
@@ -112,6 +113,7 @@ Omnitrack Engine -- development task runner
   logs [service]       Follow container logs.
   ps                   Show containers and health.
   sh                   Interactive shell in the app container.
+  telegram [args]      Attach to the Telegram poller Compose service.
   fresh                migrate:fresh --seed on the compose database.
   config               Validate and print the merged compose config.
 '@
@@ -166,10 +168,15 @@ Omnitrack Engine -- development task runner
         # service (no `build:`), so without it Docker would try the registry
         # first and fail with a confusing pull error rather than using the
         # locally built omnitrack-engine:test.
+        #
+        # The command is spelled out in full because `docker compose run` REPLACES
+        # a service's `command:` instead of appending to it. With extra args and
+        # no explicit command, `dev.ps1 test --filter=Harness` made Docker try to
+        # exec a binary literally named "--filter=Harness".
         if (-not (docker image inspect omnitrack-engine:test 2>$null)) {
             throw "omnitrack-engine:test not found. Run './scripts/dev.ps1 build' once."
         }
-        Invoke-Compose -Files (Get-DevFiles) -ComposeArgs ((Get-DevArgs) + @('run', '--rm', '--pull', 'never', 'test') + $Args)
+        Invoke-Compose -Files (Get-DevFiles) -ComposeArgs ((Get-DevArgs) + @('run', '--rm', '--pull', 'never', 'test', 'php', 'artisan', 'test') + $Args)
     }
 
     'artisan' {
@@ -199,6 +206,15 @@ Omnitrack Engine -- development task runner
 
     'sh' {
         Invoke-Compose -Files (Get-DevFiles) -ComposeArgs ((Get-DevArgs) + @('exec', 'app', 'sh'))
+    }
+
+    'telegram' {
+        # Attach to the poller in the foreground. `up` (not `run`) keeps it under
+        # Compose, so there is still exactly ONE poller: `run` would start a
+        # second container, and Telegram answers 409 to whichever long poll
+        # arrives second. No profile is passed for the same reason `up` never
+        # does -- a profile would start the test container too.
+        Invoke-Compose -Files (Get-DevFiles) -ComposeArgs (@('up', 'telegram') + $Args)
     }
 
     'fresh' {
