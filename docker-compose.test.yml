@@ -1,0 +1,29 @@
+# Test-only stack.
+#
+#   docker compose -f docker-compose.test.yml run --rm test
+#
+# Builds the `testing` Dockerfile target, which is the production runtime plus
+# dev dependencies (PHPUnit, Faker, Collision). Tests use an in-memory SQLite
+# database configured in phpunit.xml, so no database service is required and
+# the production image stays free of test tooling.
+
+services:
+    test:
+        build:
+            context: .
+            dockerfile: Dockerfile
+            target: testing
+        image: omnitrack-engine:test
+        environment:
+            APP_ENV: testing
+            APP_KEY: base64:AckfSECXIvnK5r28GVIWUAxmbBSjTsmF/0rqJ4b8FTU=
+            DB_CONNECTION: sqlite
+            DB_DATABASE: ":memory:"
+            QUEUE_CONNECTION: sync
+            CACHE_STORE: array
+            SESSION_DRIVER: array
+            HARNESS_SECRET_TOKEN: test-harness-token
+            DEEPSEEK_API_KEY: ""
+        # No source bind-mount: it would shadow the image's vendor/ directory
+        # and hide the dev dependencies this target exists to provide.
+        command: ["php", "artisan", "test"]

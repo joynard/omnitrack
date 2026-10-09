@@ -1,0 +1,138 @@
+# Local development overlay -- NOT used in production or by CI.
+#
+# WHY THIS FILE EXISTS
+# --------------------
+# The base docker-compose.yml deliberately does not mount the source tree, so
+# every code edit requires `docker compose up --build`. The build runs a full
+# `composer install` plus the whole PHP extension compile chain, which turns a
+# one-line change into a multi-minute round trip.
+#
+# This overlay binds the source tree into the already-built image so that saving
+# a file is enough. Dependencies stay OUT of the bind mount, in named volumes,
+# because a vendor/ directory installed onto the Windows filesystem is two to
+# five times slower than one built inside the Linux filesystem.
+#
+# NAMED VOLUMES vs BIND MOUNT -- the whole point of this file
+# ---------------------------------------------------------
+#   ./            -> bind mount from NTFS  : fine for source you edit
+#   vendor        -> named volume (ext4)   : fast, survives restarts
+#   node_modules  -> named volume (ext4)   : only if a JS toolchain is added
+#
+# A bind-mounted vendor/ would be the single worst thing you could do here: tens
+# of thousands of small file reads, all of them crossing the 9p filesystem
+# boundary on every single request.
+#
+# USAGE
+# -----
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml exec app php artisan test
+#
+# The same commands are wrapped in scripts/dev.ps1 -- prefer those.
+
+services:
+    app:
+        environment:
+            # Pin the environment explicitly. It is already `local` in the base
+            # file, but the entrypoint keys off it: anything other than
+            # `production` skips config:cache/route:cache, which must never run
+            # locally because cached config bakes in env values.
+            APP_ENV: local
+            RUN_MIGRATIONS: "true"
+
+        volumes:
+            # 1. The source tree. Editing a file here needs no rebuild.
+            - ./:/var/www/html
+
+            # 2. Dependencies, kept on the Linux filesystem for speed. These
+            #    shadow whatever vendor/ the image shipped, which is intended:
+            #    this volume is populated once by scripts/dev.ps1.
+            - dev-vendor:/var/www/html/vendor
+            - dev-node-modules:/var/www/html/node_modules
+
+            # 3. Writable runtime state. A bind-mounted storage/ works, but the
+            #    container runs as www-data and NTFS permissions make Laravel's
+            #    log and cache writes brittle. Keep them in a volume.
+            - dev-storage:/var/www/html/storage/framework
+            - dev-logs:/var/www/html/storage/logs
+            - ./storage/app/google:/var/www/html/storage/app/google
+
+            # 4. Development PHP settings, layered after the image's 99-*.ini.
+            - ./docker/php.dev.ini:/usr/local/etc/php/conf.d/99-dev.ini:ro
+
+    # -----------------------------------------------------------------------
+    # Test runner: the `testing` Dockerfile target (runtime + dev deps) with the
+    # source bind-mounted, so PHPUnit does not need a rebuild either.
+    #
+    # The base docker-compose.test.yml intentionally has NO bind mount because it
+    # would shadow the image's vendor/. That reasoning holds for CI; here the
+    # vendor/ comes from the dev-vendor named volume instead, so tests can run
+    # against the working tree without a build.
+    # -----------------------------------------------------------------------
+    test:
+        # No `build:` key on purpose. With one present, every `test` invocation
+        # re-evaluates the build and the Docker Compose plugin rebuilds before
+        # running -- exactly the multi-minute round trip this overlay exists to
+        # remove. The image is built explicitly instead:
+        #   scripts/dev.ps1 build
+        image: omnitrack-engine:test
+        working_dir: /var/www/html
+        environment:
+            APP_ENV: testing
+            APP_KEY: "base64:AckfSECXIvnK5r28GVIWUAxmbBSjTsmF/0rqJ4b8FTU="
+            DB_CONNECTION: sqlite
+            DB_DATABASE: ":memory:"
+            QUEUE_CONNECTION: sync
+            CACHE_STORE: array
+            SESSION_DRIVER: array
+            HARNESS_SECRET_TOKEN: test-harness-token
+            DEEPSEEK_API_KEY: ""
+        volumes:
+            - ./:/var/www/html
+            - dev-vendor:/var/www/html/vendor
+            - ./docker/php.dev.ini:/usr/local/etc/php/conf.d/99-dev.ini:ro
+        # NOTE: deliberately no depends_on. The test suite runs on in-memory
+        # SQLite, so bringing the dev stack up must never be blocked waiting for
+        # Postgres, and the test service must run even when `db` is down.
+        entrypoint: []
+        command: ["php", "artisan", "test"]
+        profiles: ["test"]
+
+    # -----------------------------------------------------------------------
+    # Dependency installers. These reuse the same named volumes as `app`, so a
+    # `composer install` run through them populates exactly the vendor/ the
+    # running container sees -- no bind-mounted vendor, no rebuild.
+    #
+    #   docker compose -f docker-compose.yml -f docker-compose.dev.yml \
+    #       run --rm composer install
+    # -----------------------------------------------------------------------
+    composer:
+        image: composer:2
+        working_dir: /app
+        entrypoint: ["composer"]
+        volumes:
+            - ./:/app
+            - dev-vendor:/app/vendor
+            # Composer's own download cache, on the Linux filesystem. Second and
+            # later installs skip the network for most packages.
+            - dev-composer-cache:/tmp/composer-cache
+        environment:
+            COMPOSER_CACHE_DIR: /tmp/composer-cache
+            COMPOSER_ALLOW_SUPERUSER: "1"
+        profiles: ["tools"]
+
+    npm:
+        image: node:24-alpine
+        working_dir: /app
+        entrypoint: ["npm"]
+        volumes:
+            # Only useful once a package.json appears; harmless until then.
+            - ./:/app
+            - dev-node-modules:/app/node_modules
+        profiles: ["tools"]
+
+volumes:
+    dev-vendor:
+    dev-node-modules:
+    dev-storage:
+    dev-logs:
+    dev-composer-cache:

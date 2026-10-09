@@ -1,0 +1,39 @@
+# Build artefacts and local-only files that must not enter the image.
+
+# VCS and local config
+.git
+.gitignore
+.github
+.idea
+.vscode
+
+# Dependencies are installed inside the build, never copied from the host
+node_modules
+vendor
+auth.json
+
+# Secrets: never bake environment files or Google credentials into an image.
+# The `testing` target needs the source tree, so tests/ is intentionally NOT
+# excluded here; it is small and the production CMD never reads it.
+.env
+.env.*
+!.env.example
+!.env.testing
+storage/app/google/*.json
+storage/app/private/*
+storage/app/public/*
+storage/framework/cache/data/*
+storage/framework/sessions/*
+storage/framework/views/*
+storage/logs/*
+bootstrap/cache/*.php
+*.log
+
+# Local build/CI noise
+.dockerignore
+docker-compose.yml
+docker-compose.test.yml
+build*.log
+.phpunit.result.cache
+.phpunit.cache
+database/database.sqlite

@@ -1,0 +1,33 @@
+/node_modules
+/public/build
+/public/hot
+/public/storage
+/storage/*.key
+/storage/app/google/*.json
+/storage/pail
+/vendor
+.env
+.env.backup
+.env.production
+.phpactor.json
+.phpunit.cache
+.phpunit.result.cache
+/.fleet
+/.idea
+/.nova
+/.phpunit.cache
+/.vscode
+/.zed
+/auth.json
+/npm-debug.log
+/yarn-error.log
+database/database.sqlite
+*.sqlite
+*.sqlite-journal
+.DS_Store
+.dsh-secrets.tmp
+
+# Local development overlay. Machine-specific: absolute paths, host ports and
+# resource tuning belong to one developer's machine, not to the repository.
+/docker-compose.override.yml
+/docker-compose.dev.local.yml

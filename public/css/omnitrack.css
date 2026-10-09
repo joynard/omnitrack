@@ -1,0 +1,1365 @@
+/* ==========================================================================
+   Omnitrack — stylesheet
+   Themes are plain CSS custom properties on <html data-theme="...">.
+   The default theme (warm) matches STYLEGUIDE.md.
+   ========================================================================== */
+
+:root,
+[data-theme="warm"] {
+    --canvas-light: #faf8f5;
+    --canvas-card: #ffffff;
+    --canvas-subtle: #f4efea;
+
+    --line-light: #e6dfd5;
+    --line-active: #9c8e7e;
+
+    --ink-primary: #2c2621;
+    --ink-secondary: #685e55;
+    --ink-muted: #9c9288;
+
+    --brand-primary: #5c4e3d;
+    --brand-hover: #453a2c;
+    --brand-text: #ffffff;
+
+    --badge-pending-bg: #f2eee9;
+    --badge-pending-text: #6e6255;
+    --badge-pending-line: #dcd4ca;
+
+    --badge-progress-bg: #ebf3fa;
+    --badge-progress-text: #2b5876;
+    --badge-progress-line: #c6dced;
+
+    --badge-done-bg: #edf4ed;
+    --badge-done-text: #2e5933;
+    --badge-done-line: #cbe0cc;
+
+    --badge-urgent-bg: #fdf0ed;
+    --badge-urgent-text: #8a3324;
+    --badge-urgent-line: #efc7be;
+
+    --topbar-bg: #ffffff;
+    --shadow: 0 18px 48px rgba(44, 38, 33, 0.16);
+    --shadow-sm: 0 2px 8px rgba(44, 38, 33, 0.08);
+}
+
+/* Paper: cooler, higher contrast, very neutral. */
+[data-theme="paper"] {
+    --canvas-light: #f6f7f8;
+    --canvas-card: #ffffff;
+    --canvas-subtle: #eceef1;
+
+    --line-light: #dcdfe4;
+    --line-active: #8b93a1;
+
+    --ink-primary: #1d2127;
+    --ink-secondary: #545c68;
+    --ink-muted: #8a929e;
+
+    --brand-primary: #2f3a4a;
+    --brand-hover: #1f2833;
+    --brand-text: #ffffff;
+
+    --badge-pending-bg: #eef0f3;
+    --badge-pending-text: #5b6472;
+    --badge-pending-line: #d8dde4;
+
+    --badge-progress-bg: #e8f1fb;
+    --badge-progress-text: #23557f;
+    --badge-progress-line: #c3daf0;
+
+    --badge-done-bg: #e9f4ec;
+    --badge-done-text: #276233;
+    --badge-done-line: #c5e0cb;
+
+    --badge-urgent-bg: #fdeeed;
+    --badge-urgent-text: #8c2f28;
+    --badge-urgent-line: #efc5c1;
+
+    --topbar-bg: #ffffff;
+    --shadow: 0 18px 48px rgba(29, 33, 39, 0.16);
+    --shadow-sm: 0 2px 8px rgba(29, 33, 39, 0.08);
+}
+
+/* Slate: cool blue-grey, low saturation. */
+[data-theme="slate"] {
+    --canvas-light: #f4f6f9;
+    --canvas-card: #ffffff;
+    --canvas-subtle: #e8edf3;
+
+    --line-light: #d5dde7;
+    --line-active: #7e8fa6;
+
+    --ink-primary: #1b2430;
+    --ink-secondary: #4e5d70;
+    --ink-muted: #8292a6;
+
+    --brand-primary: #34506e;
+    --brand-hover: #24394f;
+    --brand-text: #ffffff;
+
+    --badge-pending-bg: #eaeff5;
+    --badge-pending-text: #55657a;
+    --badge-pending-line: #cfd9e5;
+
+    --badge-progress-bg: #e5f0fb;
+    --badge-progress-text: #1f4f7d;
+    --badge-progress-line: #bed7f0;
+
+    --badge-done-bg: #e7f3ec;
+    --badge-done-text: #23603a;
+    --badge-done-line: #c0dece;
+
+    --badge-urgent-bg: #fceeed;
+    --badge-urgent-text: #86302c;
+    --badge-urgent-line: #edc4c2;
+
+    --topbar-bg: #ffffff;
+    --shadow: 0 18px 48px rgba(27, 36, 48, 0.18);
+    --shadow-sm: 0 2px 8px rgba(27, 36, 48, 0.09);
+}
+
+/* Forest: muted green, calm. */
+[data-theme="forest"] {
+    --canvas-light: #f5f8f4;
+    --canvas-card: #ffffff;
+    --canvas-subtle: #e9f0e7;
+
+    --line-light: #d6e0d3;
+    --line-active: #82977c;
+
+    --ink-primary: #1e2a1c;
+    --ink-secondary: #4f5f4b;
+    --ink-muted: #869584;
+
+    --brand-primary: #3f5f39;
+    --brand-hover: #2c4427;
+    --brand-text: #ffffff;
+
+    --badge-pending-bg: #ecf1ea;
+    --badge-pending-text: #57684f;
+    --badge-pending-line: #d3ddcf;
+
+    --badge-progress-bg: #e6f1f6;
+    --badge-progress-text: #245b6b;
+    --badge-progress-line: #c1dde5;
+
+    --badge-done-bg: #e6f4e6;
+    --badge-done-text: #256228;
+    --badge-done-line: #bfe0c0;
+
+    --badge-urgent-bg: #fbeeea;
+    --badge-urgent-text: #83372a;
+    --badge-urgent-line: #ecc8bd;
+
+    --topbar-bg: #ffffff;
+    --shadow: 0 18px 48px rgba(30, 42, 28, 0.16);
+    --shadow-sm: 0 2px 8px rgba(30, 42, 28, 0.08);
+}
+
+/* Dark: warm-neutral dark, keeps the same accent family. */
+[data-theme="dark"] {
+    --canvas-light: #1b1815;
+    --canvas-card: #24201c;
+    --canvas-subtle: #2e2925;
+
+    --line-light: #3a342e;
+    --line-active: #6d6156;
+
+    --ink-primary: #f2ece5;
+    --ink-secondary: #b8ac9e;
+    --ink-muted: #8a7f73;
+
+    --brand-primary: #b8a184;
+    --brand-hover: #cbb69c;
+    --brand-text: #1b1815;
+
+    --badge-pending-bg: #2e2925;
+    --badge-pending-text: #beb1a2;
+    --badge-pending-line: #423b34;
+
+    --badge-progress-bg: #1e2c38;
+    --badge-progress-text: #9cc6e8;
+    --badge-progress-line: #2c4356;
+
+    --badge-done-bg: #1f2c1f;
+    --badge-done-text: #9ecfa2;
+    --badge-done-line: #30432f;
+
+    --badge-urgent-bg: #33221f;
+    --badge-urgent-text: #e8a99b;
+    --badge-urgent-line: #4d332d;
+
+    --topbar-bg: #24201c;
+    --shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
+    --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+:root {
+    --radius: 4px;
+    --radius-sm: 3px;
+    --topbar-height: 56px;
+}
+
+/* --------------------------------------------------------------------------
+   Reset & base
+   -------------------------------------------------------------------------- */
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+html {
+    -webkit-text-size-adjust: 100%;
+}
+
+body {
+    margin: 0;
+    background: var(--canvas-light);
+    color: var(--ink-primary);
+    font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+}
+
+h1 {
+    font-size: 20px;
+    font-weight: 600;
+    line-height: 1.25;
+    margin: 0;
+    color: var(--ink-primary);
+}
+
+h2 {
+    font-size: 16px;
+    font-weight: 500;
+    margin: 0;
+    color: var(--ink-primary);
+}
+
+p {
+    margin: 0 0 8px;
+}
+
+a {
+    color: var(--brand-primary);
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+[hidden] {
+    display: none !important;
+}
+
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+.meta {
+    font-size: 12px;
+    color: var(--ink-secondary);
+}
+
+.muted {
+    color: var(--ink-muted);
+}
+
+.mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/* --------------------------------------------------------------------------
+   Topbar
+   -------------------------------------------------------------------------- */
+
+.topbar {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    height: var(--topbar-height);
+    padding: 0 16px;
+    background: var(--topbar-bg);
+    border-bottom: 1px solid var(--line-light);
+}
+
+.brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 0 auto;
+    color: var(--ink-primary);
+}
+
+.brand:hover {
+    text-decoration: none;
+}
+
+.brand-mark {
+    display: block;
+    width: 24px;
+    height: 24px;
+    border-radius: var(--radius-sm);
+}
+
+.brand-name {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+}
+
+/* Menu sits next to the logo but pushed to the right of it. */
+.nav {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex: 1 1 auto;
+    justify-content: flex-end;
+    min-width: 0;
+}
+
+.nav-link {
+    display: inline-block;
+    padding: 5px 11px;
+    border-radius: var(--radius);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ink-secondary);
+    border: 1px solid transparent;
+    white-space: nowrap;
+}
+
+.nav-link:hover {
+    background: var(--canvas-subtle);
+    text-decoration: none;
+    color: var(--ink-primary);
+}
+
+.nav-link.is-active {
+    background: var(--canvas-subtle);
+    border-color: var(--line-light);
+    color: var(--ink-primary);
+}
+
+.topbar-end {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 0 0 auto;
+    padding-left: 12px;
+    border-left: 1px solid var(--line-light);
+}
+
+.theme-picker {
+    display: block;
+}
+
+/* --------------------------------------------------------------------------
+   Main column — centred, with an even gutter on both sides
+   -------------------------------------------------------------------------- */
+
+.main {
+    width: 100%;
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 28px 20px 56px;
+}
+
+.page-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 18px;
+}
+
+.page-head p {
+    margin-top: 4px;
+}
+
+.head-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+/* --------------------------------------------------------------------------
+   Cards
+   -------------------------------------------------------------------------- */
+
+.card {
+    background: var(--canvas-card);
+    border: 1px solid var(--line-light);
+    border-radius: var(--radius);
+    padding: 16px;
+}
+
+.card + .card {
+    margin-top: 16px;
+}
+
+.card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+
+.card-note {
+    font-size: 12px;
+    color: var(--ink-secondary);
+}
+
+.stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+    margin-bottom: 18px;
+}
+
+.stat {
+    background: var(--canvas-card);
+    border: 1px solid var(--line-light);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+}
+
+.stat-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-secondary);
+    font-weight: 600;
+}
+
+.stat-value {
+    font-size: 20px;
+    font-weight: 600;
+    margin-top: 2px;
+}
+
+/* --------------------------------------------------------------------------
+   Buttons
+   -------------------------------------------------------------------------- */
+
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 8px 14px;
+    border-radius: var(--radius);
+    border: 1px solid transparent;
+    cursor: pointer;
+    background: none;
+    line-height: 1.2;
+}
+
+.btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.btn-primary {
+    background: var(--brand-primary);
+    color: var(--brand-text);
+}
+
+.btn-primary:hover:not(:disabled) {
+    background: var(--brand-hover);
+}
+
+.btn-secondary {
+    background: var(--canvas-card);
+    border-color: var(--line-light);
+    color: var(--ink-primary);
+}
+
+.btn-secondary:hover:not(:disabled) {
+    background: var(--canvas-subtle);
+}
+
+.btn-ghost {
+    background: none;
+    border-color: transparent;
+    color: var(--ink-secondary);
+    padding: 6px 8px;
+}
+
+.btn-ghost:hover:not(:disabled) {
+    background: var(--canvas-subtle);
+    color: var(--ink-primary);
+}
+
+.btn-sm {
+    padding: 5px 9px;
+    font-size: 12px;
+}
+
+/* --------------------------------------------------------------------------
+   Form controls
+   -------------------------------------------------------------------------- */
+
+.input,
+.select,
+.textarea {
+    width: 100%;
+    font-family: inherit;
+    font-size: 13px;
+    color: var(--ink-primary);
+    background: var(--canvas-card);
+    border: 1px solid var(--line-light);
+    border-radius: var(--radius);
+    padding: 8px 12px;
+}
+
+.select-sm {
+    padding: 5px 8px;
+    font-size: 12px;
+    width: auto;
+}
+
+.textarea {
+    resize: vertical;
+    min-height: 72px;
+    line-height: 1.5;
+}
+
+.input::placeholder,
+.textarea::placeholder {
+    color: var(--ink-muted);
+}
+
+.input:focus,
+.select:focus,
+.textarea:focus {
+    border-color: var(--line-active);
+    outline: none;
+}
+
+.field {
+    display: block;
+    margin-bottom: 10px;
+}
+
+.field-label {
+    display: block;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--ink-secondary);
+    margin-bottom: 4px;
+}
+
+.form-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 10px;
+}
+
+/* --------------------------------------------------------------------------
+   Tables
+   -------------------------------------------------------------------------- */
+
+.table-wrap {
+    background: var(--canvas-card);
+    border: 1px solid var(--line-light);
+    border-radius: var(--radius);
+    overflow-x: auto;
+}
+
+table.data {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+table.data thead th {
+    background: var(--canvas-subtle);
+    color: var(--ink-secondary);
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    text-align: left;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line-light);
+    white-space: nowrap;
+}
+
+table.data tbody td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line-light);
+    vertical-align: top;
+}
+
+table.data tbody tr:nth-child(even) {
+    background: var(--canvas-subtle);
+}
+
+table.data tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.cell-title {
+    font-weight: 500;
+    color: var(--ink-primary);
+}
+
+.cell-sub {
+    font-size: 12px;
+    color: var(--ink-secondary);
+    margin-top: 2px;
+}
+
+.empty {
+    padding: 28px 16px;
+    text-align: center;
+    color: var(--ink-secondary);
+    font-size: 13px;
+}
+
+/* --------------------------------------------------------------------------
+   Chips
+   -------------------------------------------------------------------------- */
+
+.chip {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 500;
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+    border: 1px solid;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+}
+
+.chip-pending {
+    background: var(--badge-pending-bg);
+    color: var(--badge-pending-text);
+    border-color: var(--badge-pending-line);
+}
+
+.chip-progress {
+    background: var(--badge-progress-bg);
+    color: var(--badge-progress-text);
+    border-color: var(--badge-progress-line);
+}
+
+.chip-done {
+    background: var(--badge-done-bg);
+    color: var(--badge-done-text);
+    border-color: var(--badge-done-line);
+}
+
+.chip-urgent {
+    background: var(--badge-urgent-bg);
+    color: var(--badge-urgent-text);
+    border-color: var(--badge-urgent-line);
+}
+
+.chip-plain {
+    background: var(--canvas-subtle);
+    color: var(--ink-secondary);
+    border-color: var(--line-light);
+}
+
+.progress {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 110px;
+}
+
+.progress-track {
+    flex: 1 1 auto;
+    height: 4px;
+    background: var(--canvas-subtle);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    background: var(--brand-primary);
+}
+
+.progress-label {
+    font-size: 11px;
+    color: var(--ink-secondary);
+    font-variant-numeric: tabular-nums;
+    min-width: 30px;
+    text-align: right;
+}
+
+/* --------------------------------------------------------------------------
+   Lists (tasks, modules, categories)
+   -------------------------------------------------------------------------- */
+
+.check-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.check-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line-light);
+    background: var(--canvas-card);
+}
+
+.check-item:last-child {
+    border-bottom: none;
+}
+
+.check-item input[type="checkbox"] {
+    margin-top: 3px;
+    width: 15px;
+    height: 15px;
+    accent-color: var(--brand-primary);
+    flex: 0 0 auto;
+    cursor: pointer;
+}
+
+.check-body {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.check-title {
+    font-size: 13px;
+    font-weight: 500;
+    word-break: break-word;
+}
+
+.check-title.is-done {
+    text-decoration: line-through;
+    color: var(--ink-muted);
+    font-weight: 400;
+}
+
+.check-notes {
+    font-size: 12px;
+    color: var(--ink-secondary);
+    margin-top: 2px;
+    white-space: pre-wrap;
+}
+
+.check-chips {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-top: 6px;
+}
+
+/* --------------------------------------------------------------------------
+   Categories
+   -------------------------------------------------------------------------- */
+
+.category-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+}
+
+.category-chip {
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 5px 10px;
+    border: 1px solid var(--line-light);
+    border-radius: var(--radius);
+    background: var(--canvas-card);
+    color: var(--ink-secondary);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.category-chip:hover {
+    background: var(--canvas-subtle);
+    border-color: var(--line-active);
+    color: var(--ink-primary);
+}
+
+.category-chip.is-active {
+    background: var(--brand-primary);
+    border-color: var(--brand-primary);
+    color: var(--brand-text);
+}
+
+.category-count {
+    font-size: 11px;
+    opacity: 0.75;
+    font-variant-numeric: tabular-nums;
+}
+
+.category-tag {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 500;
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--line-light);
+    background: var(--canvas-subtle);
+    color: var(--ink-secondary);
+    white-space: nowrap;
+}
+
+/* --------------------------------------------------------------------------
+   Drag to reorder
+   -------------------------------------------------------------------------- */
+
+.drag-handle {
+    flex: 0 0 auto;
+    cursor: grab;
+    color: var(--ink-muted);
+    font-size: 13px;
+    line-height: 1;
+    padding: 2px 4px;
+    border-radius: var(--radius-sm);
+    user-select: none;
+    background: none;
+    border: none;
+    font-family: inherit;
+}
+
+.drag-handle:hover {
+    background: var(--canvas-subtle);
+    color: var(--ink-primary);
+}
+
+.drag-handle:active {
+    cursor: grabbing;
+}
+
+.is-dragging {
+    opacity: 0.45;
+}
+
+.is-drop-target {
+    box-shadow: inset 0 2px 0 0 var(--brand-primary);
+}
+
+table.data tbody tr[draggable="true"] {
+    cursor: grab;
+}
+
+/* Right-hand action cluster inside a list row. */
+.row-actions {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex: 0 0 auto;
+}
+
+/* --------------------------------------------------------------------------
+   Modal + command palette
+   -------------------------------------------------------------------------- */
+
+.overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(20, 17, 14, 0.42);
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 12vh 16px 24px;
+    overflow-y: auto;
+    z-index: 50;
+}
+
+/* The palette is a flex container itself, so the generic [hidden] rule
+   (display:none !important) would be overridden without this guard. */
+.overlay[hidden] {
+    display: none;
+}
+
+/* Detail dialog sits higher and centres vertically. */
+.overlay-dialog {
+    align-items: center;
+    padding: 5vh 16px;
+    z-index: 60;
+}
+
+.palette {
+    width: 100%;
+    max-width: 620px;
+    background: var(--canvas-card);
+    border: 1px solid var(--line-light);
+    border-radius: 6px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+}
+
+.dialog {
+    width: 100%;
+    max-width: 720px;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--canvas-card);
+    border: 1px solid var(--line-light);
+    border-radius: 6px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+}
+
+.dialog-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--line-light);
+    flex: 0 0 auto;
+}
+
+.dialog-head h2 {
+    font-size: 16px;
+    font-weight: 600;
+    word-break: break-word;
+}
+
+.dialog-body {
+    padding: 16px;
+    overflow-y: auto;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.dialog-foot {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 10px 16px;
+    border-top: 1px solid var(--line-light);
+    background: var(--canvas-light);
+    flex: 0 0 auto;
+}
+
+/* Module list inside the dialog: scrolls on its own so long lists never push
+   the "add module" form off screen. */
+.dialog .module-list {
+    border: 1px solid var(--line-light);
+    border-radius: var(--radius);
+    overflow: hidden;
+    max-height: 320px;
+    overflow-y: auto;
+}
+
+.palette-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--line-light);
+}
+
+.palette-head h2 {
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-secondary);
+}
+
+.palette-body {
+    padding: 16px;
+}
+
+.palette-input {
+    font-size: 14px;
+    padding: 10px 12px;
+}
+
+.palette-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+    margin-top: 10px;
+    flex-wrap: wrap;
+}
+
+.palette-field {
+    display: block;
+}
+
+.palette-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 16px;
+    border-top: 1px solid var(--line-light);
+    background: var(--canvas-light);
+    flex-wrap: wrap;
+}
+
+.palette-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.template-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 12px;
+}
+
+.palette-hint {
+    margin: 10px 0 0;
+}
+
+/* Short label shown only on narrow screens. */
+.label-short {
+    display: none;
+}
+
+.template-btn {
+    font-family: inherit;
+    font-size: 12px;
+    text-align: left;
+    padding: 6px 9px;
+    border: 1px solid var(--line-light);
+    border-radius: var(--radius);
+    background: var(--canvas-card);
+    color: var(--ink-secondary);
+    cursor: pointer;
+    max-width: 100%;
+}
+
+.template-btn:hover {
+    background: var(--canvas-subtle);
+    border-color: var(--line-active);
+    color: var(--ink-primary);
+}
+
+/* Execution feedback */
+.feedback {
+    margin-top: 12px;
+    border: 1px solid var(--line-light);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    font-size: 13px;
+    background: var(--canvas-light);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 260px;
+    overflow-y: auto;
+}
+
+.feedback.is-success {
+    background: var(--badge-done-bg);
+    border-color: var(--badge-done-line);
+    color: var(--badge-done-text);
+}
+
+.feedback.is-error {
+    background: var(--badge-urgent-bg);
+    border-color: var(--badge-urgent-line);
+    color: var(--badge-urgent-text);
+}
+
+.feedback.is-skipped {
+    background: var(--badge-pending-bg);
+    border-color: var(--badge-pending-line);
+    color: var(--badge-pending-text);
+}
+
+.feedback.is-loading {
+    color: var(--ink-secondary);
+}
+
+/* Inline status line used while a row is saving (no page refresh needed) */
+.row-status {
+    font-size: 11px;
+    color: var(--ink-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+tr.is-saving {
+    opacity: 0.6;
+}
+
+tr.is-failed {
+    box-shadow: inset 3px 0 0 0 var(--badge-urgent-line);
+}
+
+/* Flash notices */
+.flash {
+    border: 1px solid var(--line-light);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    font-size: 13px;
+    margin-bottom: 14px;
+    background: var(--canvas-card);
+}
+
+.flash.is-success {
+    background: var(--badge-done-bg);
+    border-color: var(--badge-done-line);
+    color: var(--badge-done-text);
+}
+
+.flash.is-skipped {
+    background: var(--badge-pending-bg);
+    border-color: var(--badge-pending-line);
+    color: var(--badge-pending-text);
+}
+
+.flash.is-error {
+    background: var(--badge-urgent-bg);
+    border-color: var(--badge-urgent-line);
+    color: var(--badge-urgent-text);
+}
+
+/* --------------------------------------------------------------------------
+   Detail panel
+   -------------------------------------------------------------------------- */
+
+.detail-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 10px 18px;
+    margin-bottom: 14px;
+}
+
+.detail-term {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-muted);
+    font-weight: 600;
+}
+
+.detail-value {
+    font-size: 13px;
+    color: var(--ink-primary);
+    word-break: break-word;
+}
+
+.empty-hint {
+    font-size: 13px;
+    color: var(--ink-secondary);
+}
+
+/* --------------------------------------------------------------------------
+   Auth screen
+   -------------------------------------------------------------------------- */
+
+.auth-wrap {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px 16px;
+}
+
+.auth-card {
+    width: 100%;
+    max-width: 360px;
+    background: var(--canvas-card);
+    border: 1px solid var(--line-light);
+    border-radius: 6px;
+    padding: 22px;
+    box-shadow: var(--shadow-sm);
+}
+
+.auth-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 18px;
+}
+
+.auth-brand .brand-name {
+    font-size: 16px;
+}
+
+.auth-submit {
+    width: 100%;
+    margin-top: 16px;
+}
+
+.auth-remember {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--ink-secondary);
+    cursor: pointer;
+    margin-top: 4px;
+}
+
+.auth-remember input[type="checkbox"] {
+    width: 15px;
+    height: 15px;
+    accent-color: var(--brand-primary);
+    cursor: pointer;
+}
+
+.kbd-inline {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 10px;
+    border: 1px solid var(--line-light);
+    border-bottom-width: 2px;
+    border-radius: var(--radius-sm);
+    padding: 1px 4px;
+    background: var(--canvas-subtle);
+    color: var(--ink-secondary);
+}
+
+/* --------------------------------------------------------------------------
+   Responsive
+   -------------------------------------------------------------------------- */
+
+/* The sync button lives in the header on mobile (placed there by core.js) and
+   in the page head-actions on desktop. Declared before the media queries so the
+   responsive rules below can still override it. */
+.topbar-end .head-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* Zero-size slot: the button inside behaves as a direct child of .page-head,
+   so it lines up with the title without an extra wrapper box. */
+.page-sync-slot {
+    display: contents;
+}
+
+/* The AI button is a touch-device affordance. On desktop, Ctrl + P covers it,
+   so the header action group is hidden and the topbar stays uncluttered.
+   Hiding the container matters: .head-actions is display:flex, so hiding only
+   the button would leave an empty flex box in the topbar. */
+.topbar .topbar-actions {
+    display: none;
+}
+
+@media (max-width: 700px) {
+    .topbar {
+        height: auto;
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 8px 12px;
+    }
+
+    /* Row 1: logo on the left, actions pushed to the right. */
+    .brand-name {
+        font-size: 14px;
+    }
+
+    .brand-mark {
+        width: 22px;
+        height: 22px;
+    }
+
+    .topbar-end {
+        margin-left: auto;
+        gap: 5px;
+        padding-left: 0;
+        border-left: none;
+    }
+
+    .select-sm {
+        padding: 4px 6px;
+        font-size: 11px;
+    }
+
+    .btn-sm {
+        padding: 4px 7px;
+        font-size: 11px;
+    }
+
+    /* The AI button is reachable here, so the action group becomes visible. */
+    .topbar .topbar-actions {
+        display: flex;
+    }
+
+    /* The sync button joins the nav row, aligned with Projects and Tasks. */
+    .topbar .nav .head-actions {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+
+    /* Row 2: the menu drops below and sits flush right. */
+    .nav {
+        order: 9;
+        flex-basis: 100%;
+        justify-content: flex-end;
+        gap: 4px;
+    }
+
+    .nav-link {
+        padding: 5px 10px;
+        font-size: 12px;
+    }
+
+    .main {
+        padding: 20px 14px 44px;
+    }
+
+    .head-actions .btn {
+        padding: 6px 10px;
+        font-size: 12px;
+    }
+}
+
+/* Hidden on mobile: keyboard hints are useless on a touch screen. */
+@media (max-width: 700px) {
+    .hide-mobile {
+        display: none !important;
+    }
+}
+
+/* Narrow phones: shorten the sync label so the action row never overflows. */
+@media (max-width: 430px) {
+    .label-wide {
+        display: none;
+    }
+
+    .label-short {
+        display: inline;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+    }
+}

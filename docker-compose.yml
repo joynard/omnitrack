@@ -1,0 +1,72 @@
+# Local development / verification stack.
+#
+#   docker compose up --build
+#   -> app: http://localhost:8080
+#   -> db:  postgres on localhost:5433
+#
+# The image deliberately contains NO .env. Configuration is injected at run time
+# from the host .env via env_file, so editing .env and recreating the container
+# is enough — no rebuild, and platform secrets always win in production.
+
+services:
+    app:
+        build:
+            context: .
+            dockerfile: Dockerfile
+        image: omnitrack-engine:local
+        container_name: omnitrack-app
+        restart: unless-stopped
+        env_file:
+            - path: .env
+              required: false
+        environment:
+            # These win over .env, so the container always talks to the compose
+            # database regardless of what the host .env holds for local PHP use.
+            DB_CONNECTION: pgsql
+            DB_HOST: db
+            DB_PORT: "5432"
+            DB_DATABASE: omnitrack
+            DB_USERNAME: omnitrack
+            DB_PASSWORD: secret
+            DB_SSLMODE: prefer
+            APP_ENV: local
+            LOG_CHANNEL: stderr
+        ports:
+            - "8080:8080"
+        volumes:
+            # Persist injected Google credentials and application storage.
+            - ./storage/app/google:/var/www/html/storage/app/google
+            - app-storage:/var/www/html/storage/logs
+        depends_on:
+            db:
+                condition: service_healthy
+        healthcheck:
+            test: ["CMD", "curl", "-fsS", "http://localhost:8080/up"]
+            interval: 15s
+            timeout: 5s
+            retries: 5
+            start_period: 40s
+
+    db:
+        image: postgres:17-alpine
+        container_name: omnitrack-db
+        restart: unless-stopped
+        ports:
+            # 5433 on the host to avoid clashing with a local Postgres install.
+            - "5433:5432"
+        environment:
+            POSTGRES_DB: omnitrack
+            POSTGRES_USER: omnitrack
+            POSTGRES_PASSWORD: secret
+        volumes:
+            - db-data:/var/lib/postgresql/data
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U omnitrack -d omnitrack"]
+            interval: 5s
+            timeout: 5s
+            retries: 10
+            start_period: 10s
+
+volumes:
+    db-data:
+    app-storage:
