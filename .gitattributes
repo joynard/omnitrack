@@ -1,0 +1,45 @@
+# Line-ending policy.
+#
+# Windows Git defaults to core.autocrlf=true, which rewrites LF to CRLF on
+# checkout. For the shell scripts that ship inside the Linux container this is
+# not cosmetic -- a CRLF shebang (#!/bin/sh\r) makes the kernel look for an
+# interpreter literally named "/bin/sh\r", and the script fails to execute.
+#
+# docker/entrypoint.sh is COPYed into the image and executed by supervisor, so
+# it must stay LF no matter which machine checks the repo out.
+#
+# Detection:  git ls-files --eol -- docker/entrypoint.sh scripts/
+
+# Shell scripts and anything executed inside the container: always LF.
+*.sh            text eol=lf
+docker/*.conf   text eol=lf
+Dockerfile      text eol=lf
+.dockerignore   text eol=lf
+*.yml           text eol=lf
+*.yaml          text eol=lf
+
+# PHP, JSON and Markdown: normalise to LF in the repository. PHP does not care,
+# but a single convention avoids whole-file diffs when two machines disagree.
+*.php           text eol=lf
+*.json          text eol=lf
+*.md            text eol=lf
+*.xml           text eol=lf
+*.ini           text eol=lf
+*.css           text eol=lf
+*.js            text eol=lf
+*.blade.php     text eol=lf
+
+# Windows-only tooling: keep the native CRLF so PowerShell and cmd are happy.
+*.ps1           text eol=crlf
+*.bat           text eol=crlf
+*.cmd           text eol=crlf
+
+# Binary: never touch these.
+*.png           binary
+*.jpg           binary
+*.jpeg          binary
+*.gif           binary
+*.ico           binary
+*.svg           text eol=lf
+*.woff          binary
+*.woff2         binary
