@@ -283,7 +283,8 @@ Alexander's personal knowledge vault is read by this app, never written by it:
 | UI | `http://localhost:8080/vault` (nav: "Second Brain") |
 | Agent surface | `GET /api/harness/vault`, `/vault/notes`, `/vault/search`, `/vault/note?path=` |
 | Tests | `tests/Feature/ObsidianVaultTest.php` (throwaway vault in the system temp dir) |
-| Note generator | `scripts/vault-notes.ps1` -- regenerates the vault's `Projects/` tree from this app; only notes carrying `omnitrack_id:` are replaced, so a hand-written `## Catatan` section survives |
+| Note generator (pull) | `scripts/vault-notes.ps1` -- writes the vault's `Projects/`, `Areas/`, `Rencana/`, `Journal/Rekap/`, `Ide/`, `Home` and `Templates/` from this app |
+| Note bridge (push) | `scripts/vault-sync.ps1` -- reports checklist disagreements and orphan notes; `-Apply` sends Obsidian ticks to Omnitrack |
 
 Nothing about the vault is stored in Postgres: a note is a file, and a second copy
 would only be a second thing to keep in sync. The service scans on demand
@@ -300,6 +301,35 @@ Adding a note the UI should see needs no migration and no cache flush; a note
 deleted on the host disappears from the next scan. Only the frontmatter parser is
 deliberately small (scalars, inline lists, dash lists) -- nested YAML is not
 supported and is not needed for `title` and `tags`.
+
+### The note bridge (scripts/vault-notes.ps1 and scripts/vault-sync.ps1)
+
+The vault is a projection of this app plus Alexander's own prose, and the two are
+kept apart by markers rather than by trust:
+
+- **Generated notes carry `generated: vault-notes`.** That is the only thing the
+  generator is allowed to replace; a note without it is never touched.
+- **Hand-written text lives between `<!-- omnitrack:keep -->` and
+  `<!-- /omnitrack:keep -->`**, keyed by the `##` heading directly above it. The
+  generator reads every keep-block into a cache *before* it deletes the stale
+  files -- reading them afterwards returns empty, and the paragraph is gone.
+  The heading lookup must not walk past an intermediate `##`, or every block
+  lands in the first section of the note.
+- **The module checklist block (`<!-- omnitrack:modules -->`) is always written
+  from this app**: that is the pull side. Ticking a box there and running
+  `vault-sync.ps1 -Apply` is the push side, which posts to
+  `/api/harness/modules/{id}`. Regenerating without pushing first overwrites the
+  local ticks -- deliberately, so the direction of every write stays obvious.
+- `vault-sync.ps1` also reports note-level health: how many notes have no
+  incoming wikilink (Obsidian's orphan view) and which notes need regenerating.
+- Both scripts read the vault path from `OBSIDIAN_VAULT_HOST_PATH` and normalise
+  it to backslashes: `.env` writes forward slashes, and a mixed-separator path
+  never compares equal to a `Get-ChildItem` FullName.
+
+PowerShell notes, because both scripts hit these: `/* */` is not a comment,
+`@($json | ConvertFrom-Json)` wraps a top-level array as ONE element in 5.1, and
+`@($null)` is a one-element array -- so a "no rows" result must be an explicit
+`@()`, ideally returned as `,@()` and consumed without another `@()`.
 
 ### The DSH side of the same integration
 

@@ -171,6 +171,31 @@ a `Projects MOC` index), run `./scripts/vault-notes.ps1`. It is safe to re-run:
 only notes carrying `omnitrack_id:` are rewritten, so the hand-written `## Catatan`
 section of every note survives.
 
+### Notes and the two-way bridge
+
+`./scripts/vault-notes.ps1` writes a small structure, not just one note per
+project:
+
+| Path | What it is |
+| --- | --- |
+| `Projects/<Kategori>/<Project>.md` | one note per project: roles, module mirror, disk inventory, checklist |
+| `Areas/<Kategori>.md` | one note per area: project table, tech rollup, open modules |
+| `Projects/Projects MOC.md`, `Home.md` | indexes; every generated note is reachable from `Home` |
+| `Rencana/Fokus Saat Ini.md` | what is open right now, and which projects have no checklist yet |
+| `Journal/Rekap/<tahun>-W<minggu>.md` | weekly digest of the current ISO week |
+| `Ide/Ide.md` | scratchpad index for ideas that are not projects yet |
+| `Templates/Harian.md`, `Templates/Mingguan.md` | daily and weekly templates (core plugins are enabled on first run) |
+
+Two rules make regeneration safe:
+
+- Your writing goes **between `<!-- omnitrack:keep -->` and
+  `<!-- /omnitrack:keep -->`**, keyed by the heading above it. That text is read
+  back and re-emitted; everything else in a generated note is overwritten.
+- The module checklist (`<!-- omnitrack:modules -->`) is written from Omnitrack.
+  Tick a box, then run `./scripts/vault-sync.ps1 -Apply` to push it in.
+  `./scripts/vault-sync.ps1` without `-Apply` only reports: checklist
+  disagreements, notes that need regenerating, and notes nothing links to.
+
 ---
 
 ## Google Sheet column mapping
