@@ -260,8 +260,9 @@ $week = Get-IsoWeek (Get-Date)
 
 # --- --------------------------------------------------------------- cleanup
 # Replace only what this script wrote: a note carrying `generated: vault-notes`,
-# or the two markers the first version used (omnitrack_id, the MOC title).
-# Templates/ is skipped -- those are files to copy, not notes to refresh.
+# and nothing else. The first version also matched omnitrack_id and the MOC
+# title, so a note that merely documents this vault could be deleted. Templates/
+# is skipped as well: those are files to copy, not notes to refresh.
 $stale = @()
 
 foreach ($file in (Get-ChildItem -LiteralPath $vault -Recurse -File -Filter *.md -Force)) {
@@ -269,7 +270,10 @@ foreach ($file in (Get-ChildItem -LiteralPath $vault -Recurse -File -Filter *.md
 
     $head = (Get-Content -LiteralPath $file.FullName -TotalCount 30 -ErrorAction SilentlyContinue) -join "`n"
 
-    if ($head -match 'generated: vault-notes' -or $head -match 'omnitrack_id:' -or $head -match 'title: "Projects MOC"') {
+    # WHY the marker only: the old heuristic also deleted any note whose first 30
+    # lines merely QUOTED omnitrack_id or the MOC title, so a hand-written note
+    # documenting this vault was a landmine.
+    if ($head -match 'generated: vault-notes') {
         $stale += $file.FullName
     }
 }
