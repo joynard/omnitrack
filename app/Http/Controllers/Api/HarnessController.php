@@ -14,6 +14,7 @@ use App\Services\GoogleSheetService;
 use App\Services\ObsidianVaultService;
 use App\Services\WorkspaceTools;
 use App\Support\ProjectFields;
+use App\Support\VaultQuery;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -514,11 +515,7 @@ class HarnessController extends Controller
      */
     public function vaultNotes(Request $request): JsonResponse
     {
-        $validated = $request->validate([
-            'folder' => ['nullable', 'string', 'max:255'],
-            'q' => ['nullable', 'string', 'max:255'],
-            'limit' => ['nullable', 'integer', 'min:1', 'max:500'],
-        ]);
+        $validated = $request->validate(VaultQuery::listRules());
 
         return response()->json([
             'available' => $this->vault->available(),
@@ -537,10 +534,7 @@ class HarnessController extends Controller
      */
     public function vaultSearch(Request $request): JsonResponse
     {
-        $validated = $request->validate([
-            'q' => ['required', 'string', 'min:2', 'max:255'],
-            'limit' => ['nullable', 'integer', 'min:1', 'max:200'],
-        ]);
+        $validated = $request->validate(VaultQuery::searchRules());
 
         return response()->json($this->vault->search($validated['q'], (int) ($validated['limit'] ?? 50)));
     }
@@ -551,9 +545,7 @@ class HarnessController extends Controller
      */
     public function vaultNote(Request $request): JsonResponse
     {
-        $validated = $request->validate([
-            'path' => ['required', 'string', 'max:2048'],
-        ]);
+        $validated = $request->validate(VaultQuery::noteRules());
 
         $note = $this->vault->note($validated['path']);
 

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\ObsidianVaultService;
+use App\Support\VaultQuery;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -29,11 +30,7 @@ class VaultController extends Controller
      */
     public function notes(Request $request): JsonResponse
     {
-        $validated = $request->validate([
-            'folder' => ['nullable', 'string', 'max:255'],
-            'q' => ['nullable', 'string', 'max:255'],
-            'limit' => ['nullable', 'integer', 'min:1', 'max:500'],
-        ]);
+        $validated = $request->validate(VaultQuery::listRules());
 
         return response()->json([
             ...$this->vault->index(),
@@ -52,10 +49,7 @@ class VaultController extends Controller
      */
     public function search(Request $request): JsonResponse
     {
-        $validated = $request->validate([
-            'q' => ['required', 'string', 'min:2', 'max:255'],
-            'limit' => ['nullable', 'integer', 'min:1', 'max:200'],
-        ]);
+        $validated = $request->validate(VaultQuery::searchRules());
 
         return response()->json($this->vault->search($validated['q'], (int) ($validated['limit'] ?? 50)));
     }
@@ -65,9 +59,7 @@ class VaultController extends Controller
      */
     public function note(Request $request): JsonResponse
     {
-        $validated = $request->validate([
-            'path' => ['required', 'string', 'max:2048'],
-        ]);
+        $validated = $request->validate(VaultQuery::noteRules());
 
         $note = $this->vault->note($validated['path']);
 
