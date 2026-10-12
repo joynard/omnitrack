@@ -33,6 +33,16 @@
     ./scripts/vault-notes.ps1
 #>
 
+param(
+    # Rewrite only the project notes whose area, "Area/Project" or name matches.
+    # WHY: a full run rescans every project folder on disk, which is the slowest
+    # thing this repository does; refreshing one note should not cost that.
+    [string[]]$Only = @(),
+
+    # Ignore the on-disk layout cache and rescan every folder.
+    [switch]$Fresh
+)
+
 $ErrorActionPreference = 'Stop'
 
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
@@ -128,6 +138,81 @@ function Get-Modules([string]$projectId) {
     return ,@()
 }
 
+# ------------------------------------------------------------ layout cache ---
+# WHY a cache: the folder inventory needs a recursive walk of every project, and
+# those walks are the entire cost of a run (tens of thousands of files across
+# TA/Model, MOB FT and Testing Zone). The signature is deliberately cheap -- only
+# top-level entries, their mtimes and their sizes -- so reusing an entry costs one
+# shallow listing instead of a tree walk. A file created deep inside an unchanged
+# top-level folder does not bump that folder's mtime, so a nested COUNT can lag
+# until the next -Fresh; names, sizes and totals stay correct.
+$cachePath = Join-Path $env:USERPROFILE '.dsh\cache\omnitrack-vault-layout.json'
+$layoutStore = @{}
+$cacheHits = 0
+$cacheMisses = 0
+$utf8 = New-Object System.Text.UTF8Encoding($false)
+
+if (-not $Fresh -and (Test-Path -LiteralPath $cachePath)) {
+    try {
+        $stored = Get-Content -LiteralPath $cachePath -Raw | ConvertFrom-Json
+        foreach ($property in $stored.PSObject.Properties) { $layoutStore[$property.Name] = $property.Value }
+    } catch {
+        Write-Output "cache layout tidak terbaca, memindai ulang: $($_.Exception.Message)"
+    }
+}
+
+function Get-DirSignature([string]$path) {
+    $parts = New-Object System.Collections.Generic.List[string]
+
+    foreach ($entry in (Get-ChildItem -LiteralPath $path -Force -ErrorAction SilentlyContinue)) {
+        $parts.Add(('{0}|{1}|{2}' -f $entry.Name, $entry.LastWriteTimeUtc.Ticks, $(if ($entry.PSIsContainer) { 'd' } else { $entry.Length })))
+    }
+
+    return ($parts -join ';')
+}
+
+function Get-LayoutCached([string]$path) {
+    if (-not (Test-Path -LiteralPath $path)) { return $null }
+
+    $signature = Get-DirSignature $path
+
+    if (-not $Fresh -and $layoutStore.ContainsKey($path) -and $layoutStore[$path].Signature -eq $signature) {
+        $script:cacheHits++
+        return $layoutStore[$path].Layout
+    }
+
+    $script:cacheMisses++
+    $layout = Get-DiskLayout $path
+
+    if ($layout) {
+        $layoutStore[$path] = [pscustomobject]@{ Signature = $signature; Scanned = (Get-Date).ToString('s'); Layout = $layout }
+    }
+
+    return $layout
+}
+
+function Save-LayoutCache {
+    if ($layoutStore.Count -eq 0) { return }
+
+    $dir = Split-Path -Parent $cachePath
+    if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
+
+    [System.IO.File]::WriteAllText($cachePath, ($layoutStore | ConvertTo-Json -Depth 8), $utf8)
+}
+
+function Test-OnlyMatch([string]$category, [string]$name, [string[]]$filters) {
+    if ($filters.Count -eq 0) { return $true }
+
+    foreach ($filter in $filters) {
+        $needle = $filter.Trim()
+        if ($needle -eq '') { continue }
+        if ($category -ieq $needle) { return $true }
+        if (('{0}/{1}' -f $category, $name) -ieq $needle) { return $true }
+        if ($name -like ('*' + $needle + '*')) { return $true }
+    }
+
+    return $false
+}
 function Get-DiskLayout([string]$path) {
     if (-not (Test-Path -LiteralPath $path)) { return $null }
 
@@ -265,7 +350,7 @@ $week = Get-IsoWeek (Get-Date)
 # is skipped as well: those are files to copy, not notes to refresh.
 $stale = @()
 
-foreach ($file in (Get-ChildItem -LiteralPath $vault -Recurse -File -Filter *.md -Force)) {
+foreach ($file in $(if ($Only.Count -eq 0) { Get-ChildItem -LiteralPath $vault -Recurse -File -Filter *.md -Force } else { @() })) {
     if ($file.FullName -match '\\Templates\\') { continue }
 
     $head = (Get-Content -LiteralPath $file.FullName -TotalCount 30 -ErrorAction SilentlyContinue) -join "`n"
@@ -287,17 +372,22 @@ foreach ($path in $stale) {
     Remove-Item -LiteralPath $path -Force
 }
 
-foreach ($dir in (Get-ChildItem -LiteralPath $vault -Recurse -Directory -Force |
+foreach ($dir in $(if ($Only.Count -eq 0) { Get-ChildItem -LiteralPath $vault -Recurse -Directory -Force |
                   Where-Object { $_.Name -notin @('.obsidian', 'Templates') } |
-                  Sort-Object { $_.FullName.Length } -Descending)) {
+                  Sort-Object { $_.FullName.Length } -Descending } else { @() })) {
     if (-not (Get-ChildItem -LiteralPath $dir.FullName -Force)) { Remove-Item -LiteralPath $dir.FullName -Force }
 }
 
 # --- -------------------------------------------------------- project notes
 $written = 0
-$layoutCache = @{}
 
-foreach ($project in ($projects | Sort-Object _cat, order_index)) {
+$selected = @($projects | Where-Object { Test-OnlyMatch $_.categoryName $_.name $Only })
+
+if ($Only.Count -gt 0 -and $selected.Count -eq 0) {
+    throw ('Tidak ada project yang cocok dengan -Only: ' + ($Only -join ', '))
+}
+
+foreach ($project in ($selected | Sort-Object _cat, order_index)) {
     $notePath = Join-Path $vault ($project.notePath + '.md')
     $kept = Get-KeptSectionsFrom $notePath $keptCache
 
@@ -381,8 +471,7 @@ foreach ($project in ($projects | Sort-Object _cat, order_index)) {
     }
 
     if ($diskPath) {
-        if (-not $layoutCache.ContainsKey($diskPath)) { $layoutCache[$diskPath] = Get-DiskLayout $diskPath }
-        $layout = $layoutCache[$diskPath]
+        $layout = Get-LayoutCached $diskPath
         if ($layout) {
             $lines.Add('## Isi folder di disk')
             $lines.Add('')
@@ -412,6 +501,15 @@ foreach ($project in ($projects | Sort-Object _cat, order_index)) {
     $written++
 }
 
+# A filtered run stops here: Areas/, MOC, Home, Rencana, Ide, the journal and the
+# templates all describe the whole workspace, so rewriting them from a partial
+# project set would be worse than leaving them one run behind.
+if ($Only.Count -gt 0) {
+    Save-LayoutCache
+    Write-Output ('project notes : {0} (hanya yang cocok dengan -Only; note lain tidak disentuh)' -f $written)
+    Write-Output ('layout cache  : {0} dipakai ulang, {1} dipindai' -f $cacheHits, $cacheMisses)
+    return
+}
 # --- ----------------------------------------------------------- area notes
 $areaWritten = 0
 
@@ -864,4 +962,5 @@ Write-Output ('project notes : {0}' -f $written)
 Write-Output ('area notes    : {0}' -f $areaWritten)
 Write-Output ('other notes   : Projects MOC, Home, Welcome, Rencana/Fokus Saat Ini, Ide/Ide, Journal/Rekap/{0}' -f $week.Key)
 Write-Output ('templates     : Templates/Harian.md, Templates/Mingguan.md')
-Write-Output ('disk scanned  : {0} folders' -f $layoutCache.Count)
+Save-LayoutCache
+Write-Output ('layout cache  : {0} dipakai ulang, {1} dipindai' -f $cacheHits, $cacheMisses)
