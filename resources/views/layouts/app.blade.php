@@ -40,6 +40,9 @@
            href="{{ route('projects.index') }}">Projects</a>
         <a class="nav-link {{ request()->routeIs('tasks.*') ? 'is-active' : '' }}"
            href="{{ route('tasks.index') }}">Tasks</a>
+        {{-- Read-only view of the Obsidian vault mounted at /vault. --}}
+        <a class="nav-link {{ request()->routeIs('vault.*') ? 'is-active' : '' }}"
+           href="{{ route('vault.index') }}">Second Brain</a>
     </nav>
 
     <div class="topbar-end">

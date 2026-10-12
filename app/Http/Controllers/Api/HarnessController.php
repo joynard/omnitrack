@@ -11,6 +11,7 @@ use App\Models\SheetSource;
 use App\Models\Task;
 use App\Services\AiOrchestrator;
 use App\Services\GoogleSheetService;
+use App\Services\ObsidianVaultService;
 use App\Services\WorkspaceTools;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\JsonResponse;
@@ -31,6 +32,7 @@ class HarnessController extends Controller
     public function __construct(
         private readonly AiOrchestrator $orchestrator,
         private readonly GoogleSheetService $sheets,
+        private readonly ObsidianVaultService $vault,
     ) {}
 
     /**
@@ -512,6 +514,81 @@ class HarnessController extends Controller
                 'due_date', 'due_date_shift_days',
             ]),
         );
+    }
+
+    // ---------------------------------------------------------- obsidian vault
+
+    /**
+     * GET /api/harness/vault
+     *
+     * Shape of the second brain: whether it is mounted at all, how many notes,
+     * which folders and tags exist. An agent should call this first, because
+     * `available: false` means every other vault route is empty rather than
+     * broken.
+     */
+    public function vault(): JsonResponse
+    {
+        return response()->json($this->vault->index());
+    }
+
+    /**
+     * GET /api/harness/vault/notes?folder=&q=&limit=
+     * Note headers, newest first. `q` matches titles and paths; body text is
+     * the job of /vault/search.
+     */
+    public function vaultNotes(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'folder' => ['nullable', 'string', 'max:255'],
+            'q' => ['nullable', 'string', 'max:255'],
+            'limit' => ['nullable', 'integer', 'min:1', 'max:500'],
+        ]);
+
+        return response()->json([
+            'available' => $this->vault->available(),
+            'path' => $this->vault->path(),
+            'notes' => $this->vault->notes(
+                $validated['folder'] ?? null,
+                $validated['q'] ?? null,
+                (int) ($validated['limit'] ?? 200),
+            ),
+        ]);
+    }
+
+    /**
+     * GET /api/harness/vault/search?q=&limit=
+     * Full-text search with a snippet per hit.
+     */
+    public function vaultSearch(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'q' => ['required', 'string', 'min:2', 'max:255'],
+            'limit' => ['nullable', 'integer', 'min:1', 'max:200'],
+        ]);
+
+        return response()->json($this->vault->search($validated['q'], (int) ($validated['limit'] ?? 50)));
+    }
+
+    /**
+     * GET /api/harness/vault/note?path=Folder/Note.md
+     * One note: body, frontmatter, tags, outgoing wikilinks and backlinks.
+     */
+    public function vaultNote(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'path' => ['required', 'string', 'max:2048'],
+        ]);
+
+        $note = $this->vault->note($validated['path']);
+
+        if ($note === null) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Catatan tidak ditemukan di vault.',
+            ], 404);
+        }
+
+        return response()->json(['status' => 'success', 'note' => $note]);
     }
 
     // --------------------------------------------------------------- helpers

@@ -64,6 +64,21 @@ services:
             # container restart to take effect.
             - ./docker/php.dev.ini:/usr/local/etc/php/conf.d/zz-dev.ini:ro
 
+            # 5. The Obsidian Second Brain, mounted READ-ONLY from the host.
+            #    WHY read-only: the vault is a live Obsidian workspace, so the
+            #    reader has to point at the real directory to stay current -- but
+            #    Omnitrack only ever reads it, and `read_only: true` is what stops
+            #    a bug (or an agent) from rewriting Alexander's notes.
+            #    WHY the long syntax: the host path contains spaces and a
+            #    drive-letter colon, and the short `src:dst:ro` form would have to
+            #    guess where the source ends.
+            #    WHY from .env: the vault location is personal, not a property of
+            #    this repository, so a fresh clone falls back to the default path.
+            - type: bind
+              source: ${OBSIDIAN_VAULT_HOST_PATH:-D:/Alexander Files/Alexander/Obsidian Vaults/Second Brain}
+              target: /vault
+              read_only: true
+
     # -----------------------------------------------------------------------
     # The Telegram poller needs the working tree just as much as `app` does:
     # without this it would run the code baked into the image, and every edit to
@@ -86,6 +101,14 @@ services:
             # opcache.validate_timestamps, which is why PHP edits used to need a
             # container restart to take effect.
             - ./docker/php.dev.ini:/usr/local/etc/php/conf.d/zz-dev.ini:ro
+
+            # The same read-only vault mount as `app`: Artemis answers questions
+            # about notes, and the poller must not see a different view of the
+            # second brain than the web UI does.
+            - type: bind
+              source: ${OBSIDIAN_VAULT_HOST_PATH:-D:/Alexander Files/Alexander/Obsidian Vaults/Second Brain}
+              target: /vault
+              read_only: true
 
     # -----------------------------------------------------------------------
     # Test runner: the `testing` Dockerfile target (runtime + dev deps) with the

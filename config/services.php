@@ -59,4 +59,34 @@ return [
     'harness' => [
         'token' => env('HARNESS_SECRET_TOKEN'),
     ],
+
+    'obsidian' => [
+        // The Obsidian "Second Brain" vault. docker-compose.dev.yml bind-mounts
+        // the host vault at /vault read-only; production has no such mount, so
+        // the value simply does not exist there and every vault endpoint
+        // degrades to an empty state instead of failing.
+        'vault_path' => env('OBSIDIAN_VAULT_PATH', '/vault'),
+
+        // Shown in the UI and used to build obsidian://open?vault=... links.
+        'vault_name' => env('OBSIDIAN_VAULT_NAME', 'Second Brain'),
+
+        // Directories that are never notes. Dot directories (.obsidian,
+        // .trash) are skipped by the scanner itself.
+        'excluded_dirs' => ['node_modules', 'vendor', 'attachments'],
+
+        // Upper bound on one scan, so an accidentally pointed-at folder (a whole
+        // drive) cannot turn a page load into a several-minute walk.
+        'max_notes' => (int) env('OBSIDIAN_MAX_NOTES', 5000),
+
+        // Bytes read per note while building the index: frontmatter and the
+        // first heading both live at the top of the file.
+        'head_bytes' => 4096,
+
+        // Context characters returned around a search hit.
+        'snippet_chars' => 240,
+
+        // Backlinks need a full body read per candidate note, so they are
+        // capped rather than computed over the entire vault.
+        'backlink_scan_limit' => (int) env('OBSIDIAN_BACKLINK_SCAN_LIMIT', 400),
+    ],
 ];

@@ -1805,6 +1805,56 @@ tr.is-failed {
     display: none;
 }
 
+/* --------------------------------------------------------------------------
+   Second Brain (Obsidian vault) browser
+   --------------------------------------------------------------------------
+   The vault is read-only, so there is no editing affordance anywhere here: a
+   row opens a preview dialog and the note text renders into a <pre> that keeps
+   its original line breaks.
+*/
+.vault-row {
+    cursor: pointer;
+}
+
+.vault-row:hover {
+    background: var(--canvas-subtle);
+}
+
+.vault-tag-cell .chip + .chip {
+    margin-left: 4px;
+}
+
+.vault-snippet {
+    display: block;
+    margin-top: 2px;
+    color: var(--ink-secondary);
+    font-size: 0.9em;
+    line-height: 1.4;
+}
+
+.vault-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 10px 0;
+}
+
+.vault-body {
+    margin: 0;
+    padding: 12px;
+    max-height: 46vh;
+    overflow: auto;
+    border: 1px solid var(--line-light);
+    border-radius: var(--radius-sm);
+    background: var(--canvas-subtle);
+    color: var(--ink-primary);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
 @media (prefers-reduced-motion: reduce) {
     * {
         animation-duration: 0.01ms !important;

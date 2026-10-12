@@ -3,6 +3,7 @@
 use App\Http\Controllers\AiCommandController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\BoardController;
+use App\Http\Controllers\VaultController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -31,6 +32,22 @@ Route::middleware('auth')->group(function () {
 
     Route::view('/projects', 'projects.index')->name('projects.index');
     Route::view('/tasks', 'tasks.index')->name('tasks.index');
+
+    /*
+    |--------------------------------------------------------------------------
+    | Obsidian Second Brain (read-only)
+    |--------------------------------------------------------------------------
+    | /vault renders the browser; the JSON routes below hydrate it and are the
+    | web-session mirror of /api/harness/vault/* for agents. Neither writes to
+    | the vault -- it is mounted read-only.
+    */
+    Route::view('/vault', 'vault.index')->name('vault.index');
+
+    Route::prefix('vault')->name('vault.')->group(function () {
+        Route::get('/notes', [VaultController::class, 'notes'])->name('notes');
+        Route::get('/search', [VaultController::class, 'search'])->name('search');
+        Route::get('/note', [VaultController::class, 'note'])->name('note');
+    });
 
     // AI command palette.
     Route::post('/ai/command', [AiCommandController::class, 'handle'])->name('ai.command');

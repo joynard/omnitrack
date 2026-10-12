@@ -260,6 +260,44 @@ and `.gitignore` covers `.env`, `.env.backup`, `.env.production`, `auth.json`
 and `storage/app/google/*.json`. Re-audit with `git ls-files` after adding any
 new configuration file.
 
+## Second Brain (Obsidian vault)
+
+Alexander's personal knowledge vault is read by this app, never written by it:
+
+| Fact | Value |
+|---|---|
+| Host vault | `D:\Alexander Files\Alexander\Obsidian Vaults\Second Brain` |
+| Container mount | `/vault`, **read-only**, declared in `docker-compose.dev.yml` for `app` and `telegram` |
+| Host-path override | `OBSIDIAN_VAULT_HOST_PATH` in `.env` (Compose interpolation) |
+| In-container path | `OBSIDIAN_VAULT_PATH` (default `/vault`), `OBSIDIAN_VAULT_NAME` for `obsidian://` links |
+| Code | `app/Services/ObsidianVaultService.php`, `app/Http/Controllers/VaultController.php`, `resources/views/vault/index.blade.php`, `public/js/vault.js` |
+| UI | `http://localhost:8080/vault` (nav: "Second Brain") |
+| Agent surface | `GET /api/harness/vault`, `/vault/notes`, `/vault/search`, `/vault/note?path=` |
+| Tests | `tests/Feature/ObsidianVaultTest.php` (throwaway vault in the system temp dir) |
+
+Nothing about the vault is stored in Postgres: a note is a file, and a second copy
+would only be a second thing to keep in sync. The service scans on demand
+(`max_notes` caps one scan), reads only the first 4 kB of each note to build the
+index, and degrades to `available: false` when the mount is absent -- which is
+exactly the production case, since only the dev overlay mounts it.
+
+`resolve()` is the security boundary: a path arriving from the browser or an agent
+is rejected if it is absolute, contains a `..` or hidden/excluded segment, is not
+`.md`, or (after `realpath()`) lands outside the vault. Do not "simplify" it into
+a plain `file_get_contents($vault.'/'.$path)`.
+
+Adding a note the UI should see needs no migration and no cache flush; a note
+deleted on the host disappears from the next scan. Only the frontmatter parser is
+deliberately small (scalars, inline lists, dash lists) -- nested YAML is not
+supported and is not needed for `title` and `tags`.
+
+### The DSH side of the same integration
+
+`D:\Projects\AGENTS.md` tells every agent session in that workspace that the vault
+exists, and the user-level skill at `~/.dsh/skills/second-brain/SKILL.md` carries
+the full procedure (search recipes, wikilink rules, harness endpoints). Both are
+outside this repository on purpose: they describe Alexander's machine, not the app.
+
 ## Conventions
 
 - Match the existing comment density. Every non-obvious decision in `Dockerfile`,

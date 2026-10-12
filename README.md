@@ -149,6 +149,23 @@ Full walkthrough: [`storage/app/google/README.md`](storage/app/google/README.md)
 - returns `['status' => 'skipped', 'message' => 'Credentials not injected yet']`
 - never throws, so the UI, the queue worker, and the scheduler all stay healthy
 
+### Obsidian Second Brain (optional, read-only)
+
+Omnitrack can browse, search and read an Obsidian vault. It never writes to it.
+
+```env
+OBSIDIAN_VAULT_HOST_PATH="D:/path/to/vault"   # host path, read by Compose
+OBSIDIAN_VAULT_PATH=/vault                    # path inside the container
+OBSIDIAN_VAULT_NAME="Second Brain"            # label used in obsidian:// links
+```
+
+`docker-compose.dev.yml` bind-mounts the host path at `/vault` **read-only** for
+`app` and `telegram`. The base `docker-compose.yml` mounts nothing, so a production
+instance reports `available: false` and the page stays empty instead of failing --
+there is no vault to leak on a server. The UI lives at `/vault` (nav: "Second
+Brain"); the agent surface is `/api/harness/vault*`; notes are read from disk on
+each request, so nothing needs migrating or re-indexing.
+
 ---
 
 ## Google Sheet column mapping
@@ -313,6 +330,10 @@ The token may also be passed as `?token=` for quick manual checks. If
 | `DELETE` | `/api/harness/tasks/{task}` | Delete one task |
 | `POST` | `/api/harness/tasks/reorder` | Reorder tasks from a complete id list |
 | `POST` | `/api/harness/sync` | Queue a Google Sheet ingestion run |
+| `GET` | `/api/harness/vault` | Whether the Obsidian vault is mounted, with note/folder/tag counts |
+| `GET` | `/api/harness/vault/notes` | Note headers, newest first (`folder`, `q`, `limit`) |
+| `GET` | `/api/harness/vault/search` | Full-text vault search with a snippet per hit |
+| `GET` | `/api/harness/vault/note` | One note by `path`: body, frontmatter, tags, wikilinks, backlinks |
 
 All mutations are funnelled through `AiOrchestrator::callTool()`, so the palette,
 the Blade UI, and this API share one validated implementation. Responses use the

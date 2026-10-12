@@ -61,4 +61,12 @@ Route::prefix('harness')
 
         // Google Sheets ingestion.
         Route::post('/sync', [HarnessController::class, 'sync'])->name('sync');
+
+        // Obsidian Second Brain -- read-only. An agent can consult the vault
+        // through HTTP instead of a shell, which is the only way it can do so
+        // from inside the container. Mirrors /vault/* on the web session.
+        Route::get('/vault', [HarnessController::class, 'vault'])->name('vault');
+        Route::get('/vault/notes', [HarnessController::class, 'vaultNotes'])->name('vault.notes');
+        Route::get('/vault/search', [HarnessController::class, 'vaultSearch'])->name('vault.search');
+        Route::get('/vault/note', [HarnessController::class, 'vaultNote'])->name('vault.note');
     });
