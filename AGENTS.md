@@ -136,6 +136,12 @@ is the production case. `resolve()` is the security boundary: reject absolute
 paths, `..` or hidden segments, non-`.md`, and anything outside the vault after
 `realpath()`. Do not "simplify" it into `file_get_contents($vault.'/'.$path)`.
 
+Two invariants keep that bridge honest, both learned the hard way on 12 Oct 2026:
+the markers must stand ALONE on their own line (Home's own prose quotes them as inline
+code, and a parser that accepts them anywhere swallows the real block, which destroyed
+Home's keep content on every run), and every block read is journalled to
+`~/.dsh/cache/omnitrack-keep.json` before the first deletion, so a run that dies
+mid-way no longer takes hand-written prose with it.
 Note bridge rules: generated notes carry `generated: vault-notes` and are the only
 thing the generator replaces; hand-written text lives between
 `<!-- omnitrack:keep -->` markers, keyed by the heading above it, and is read back

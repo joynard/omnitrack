@@ -2,9 +2,9 @@
 
 Personal workspace + task tracker. It keeps two deliberately isolated domains:
 
-- **Projects** — large-scope work with sub-elements (**Modules / Todo**),
+- **Projects** â€” large-scope work with sub-elements (**Modules / Todo**),
   optionally ingested from a Google Sheet.
-- **Tasks** — ad-hoc personal checklist, independent of any project.
+- **Tasks** â€” ad-hoc personal checklist, independent of any project.
 
 Plus a global **`Ctrl + P` Apollo palette** backed by the DeepSeek API, a
 token-protected **`/api/harness/*`** bridge so DeepSeek Harness can drive the
@@ -20,7 +20,7 @@ from a phone.
 | Runtime | PHP 8.3 (Alpine container) |
 | Framework | Laravel 13 |
 | Database | PostgreSQL (Neon / Supabase), ULID primary keys |
-| Queue / Cache / Session | `database` driver — no Redis needed |
+| Queue / Cache / Session | `database` driver â€” no Redis needed |
 | Frontend | Blade + hand-authored CSS + vanilla JS (no Node build step) |
 | Container | PHP-FPM + Nginx + Supervisor in one image |
 | External | Google Sheets API v4, DeepSeek API, Telegram Bot API |
@@ -30,7 +30,7 @@ from a phone.
 The Laravel 13 skeleton no longer ships Vite by default, and this project only
 needs one stylesheet. `public/css/omnitrack.css` implements `STYLEGUIDE.md`
 directly using CSS custom properties whose names mirror the Tailwind token names
-from the styleguide (`--canvas-light`, `--ink-primary`, `--brand-primary`, …).
+from the styleguide (`--canvas-light`, `--ink-primary`, `--brand-primary`, â€¦).
 
 Consequences:
 
@@ -97,7 +97,7 @@ php -r "echo 'base64:'.base64_encode(random_bytes(32));"   # APP_KEY
 php -r "echo bin2hex(random_bytes(32));"                    # HARNESS_SECRET_TOKEN
 ```
 
-### Database — Neon or Supabase
+### Database â€” Neon or Supabase
 
 Both providers give you one connection string. The simplest option is to paste it
 into a single variable:
@@ -196,6 +196,11 @@ Two rules make regeneration safe:
   `./scripts/vault-sync.ps1` without `-Apply` only reports: checklist
   disagreements, notes that need regenerating, and notes nothing links to.
 
+Two rules make the markers themselves safe: they must stand **alone on their own
+line**, because Home quotes them as inline code and a parser that accepts them
+anywhere swallows the real block; and every block read is journalled to
+`~/.dsh/cache/omnitrack-keep.json` **before** the first deletion, so a run that dies
+mid-way is recoverable on the next run.
 Re-running is cheap when only one note is stale: pass
 `-Only 'PT SPIL/Forecast Container'` (an area, `Area/Project`, or a name
 fragment) and the generator rewrites just those project notes, reusing a cached
@@ -239,7 +244,7 @@ the UI have `sheet_source_id = NULL`, so a sync can never modify or delete them.
 ## Apollo palette (`Ctrl + P`)
 
 Press **`Ctrl + P`** (or **`Cmd + P`**) anywhere. **`Esc`** closes it; the input
-is autofocused. There is no header button — the shortcut is the only entry point,
+is autofocused. There is no header button â€” the shortcut is the only entry point,
 as requested.
 
 **Full control (default action).** The palette uses DeepSeek *native tool
@@ -275,7 +280,7 @@ opens the palette on page load.
 
 ## Categories
 
-Projects can be filed under a category — *Kuliah*, *Kantor*, *Pribadi*, or
+Projects can be filed under a category â€” *Kuliah*, *Kantor*, *Pribadi*, or
 anything you add. The Projects page has a filter bar with per-category counts,
 and a **Kelola Kategori** panel to add, rename, and delete categories.
 
@@ -289,14 +294,14 @@ Deleting a category **never deletes its projects**: the foreign key is
 ## Project status follows the checklist
 
 Ticking every module of a project marks the project itself **Done**, and a project
-that still has an open module can no longer claim to be Done — it reopens as In
+that still has an open module can no longer claim to be Done â€” it reopens as In
 Progress. Which transitions happen automatically is deliberately narrow:
 
 | Module states | Project status |
 | --- | --- |
 | Every module done | `done` (always) |
 | Something still open, project was `done` | `in_progress` |
-| Nothing started yet | left alone — `pending` vs `in_progress` is your call |
+| Nothing started yet | left alone â€” `pending` vs `in_progress` is your call |
 | No modules at all | left alone |
 
 The rule lives in `Project::syncStatusFromModules()` and is applied from
@@ -320,7 +325,7 @@ Order is stored explicitly as `order_index` on projects, modules and tasks.
   expression. `upsert()` proposes a whole INSERT tuple, so every NOT NULL column
   the row does not mention (`projects.name`, `tasks.title`,
   `project_modules.project_id`) still had to be supplied, and SQLite rejected the
-  proposal outright — which is why every reorder test used to be red.
+  proposal outright â€” which is why every reorder test used to be red.
 
 ---
 
@@ -328,10 +333,10 @@ Order is stored explicitly as `order_index` on projects, modules and tasks.
 
 The sidebar can be collapsed and expanded:
 
-- Click the **`‹`** control in the sidebar header, or press **`Ctrl/Cmd + B`**.
+- Click the **`â€¹`** control in the sidebar header, or press **`Ctrl/Cmd + B`**.
 - The state is stored in `localStorage` and applied to `<html>` **before first
   paint**, so a collapsed rail never flashes open on load.
-- On desktop the rail is removed from the layout and a floating **`›`** handle
+- On desktop the rail is removed from the layout and a floating **`â€º`** handle
   appears to bring it back. On mobile it collapses in place to a header row.
 - `?sidebar=collapsed` / `?sidebar=expanded` forces a start state.
 
@@ -370,13 +375,13 @@ The token may also be passed as `?token=` for quick manual checks. If
 | `POST` | `/api/harness/categories/{id}` | Rename a category |
 | `DELETE` | `/api/harness/categories/{id}` | Delete a category (projects survive, unfiled) |
 | `POST` | `/api/harness/projects` | Create a project, or update one by passing `id` |
-| `POST` | `/api/harness/projects/{project}` | Update a project (`category_id`, `category_name`, …) |
+| `POST` | `/api/harness/projects/{project}` | Update a project (`category_id`, `category_name`, â€¦) |
 | `DELETE` | `/api/harness/projects/{project}` | Delete a project and its modules |
 | `POST` | `/api/harness/projects/reorder` | Reorder projects from a complete id list |
 | `POST` | `/api/harness/projects/bulk` | **Bulk update or delete projects** (`action`, then `project_ids` or `all` + `where`) |
 | `POST` | `/api/harness/projects/{id}/modules` | Batch-add modules to a project |
 | `POST` | `/api/harness/projects/{id}/modules/reorder` | Reorder a project's modules |
-| `POST` | `/api/harness/modules/bulk` | **Bulk update or delete modules** by id list, or `all` + `where` (one project, one status, …) |
+| `POST` | `/api/harness/modules/bulk` | **Bulk update or delete modules** by id list, or `all` + `where` (one project, one status, â€¦) |
 | `POST` | `/api/harness/modules/{module}` | Update one module |
 | `DELETE` | `/api/harness/modules/{module}` | Delete one module |
 | `POST` | `/api/harness/categories/reorder` | Reorder categories from a complete id list |
@@ -398,23 +403,23 @@ shape `{status, message, data}`; validation failures return **422**, not 500.
 
 ### Bulk targeting
 
-Every mutating tool — and therefore every `/bulk` endpoint — resolves its target
+Every mutating tool â€” and therefore every `/bulk` endpoint â€” resolves its target
 the same way, in this order:
 
-1. **`*_ids`** — an explicit list. Wins over everything else.
-2. **`all: true`** — every row matching the optional `where` filter. Each entity
+1. **`*_ids`** â€” an explicit list. Wins over everything else.
+2. **`all: true`** â€” every row matching the optional `where` filter. Each entity
    advertises exactly the filters it can express: `status` for projects, modules
    and tasks; `priority` for modules and tasks; `project_id` for modules;
    `category_id` for projects; and **nothing at all** for categories, so an `all`
    there is always a whole-workspace wipe and always needs `confirm`.
-3. **`*_id`** — a single row (categories also accept `name`).
+3. **`*_id`** â€” a single row (categories also accept `name`).
 
 Two update-only keys are not selectors, but neither can be expressed as a single
 mass `UPDATE`, so both take a slower per-row path:
 
-- **`move_to_project_id`** (modules) — moves the targets to another project,
+- **`move_to_project_id`** (modules) â€” moves the targets to another project,
   appended after that project's current maximum `order_index`.
-- **`due_date_shift_days`** (modules and tasks) — shifts *each* row's own due date
+- **`due_date_shift_days`** (modules and tasks) â€” shifts *each* row's own due date
   by N days; rows with no due date are left alone. Mutually exclusive with
   `due_date`, which itself also accepts anything `strtotime()` understands, so
   `"+7 days"` works for a single row.
@@ -422,7 +427,7 @@ mass `UPDATE`, so both take a slower per-row path:
 `all` is a separate boolean rather than "an omitted id means everything", because
 the dangerous case has to be said out loud: a typo in an id list can only ever
 affect rows that were named. An `all: true` with no `where` at all is the one
-path that can touch rows nobody named, so it also requires **`confirm: true`** —
+path that can touch rows nobody named, so it also requires **`confirm: true`** â€”
 two deliberate decisions before a whole-workspace wipe. A scoped `all` (one
 project, one status) needs no confirmation.
 
@@ -485,7 +490,7 @@ healthcheck.
 
 ---
 
-## Telegram bot — drive Omnitrack from your phone
+## Telegram bot â€” drive Omnitrack from your phone
 
 Send instructions to your own Telegram bot and Omnitrack executes them. It reuses
 the palette's agent, so everything `Ctrl + P` can do works from a phone:
@@ -502,7 +507,7 @@ Apa progres project Vendor Migration Q4?
 
 The bot uses **long polling**, not a webhook: the container calls `getUpdates` and
 Telegram holds that request open for 25 s. That needs no public URL, no tunnel and
-no inbound port, so it works from a laptop behind NAT — and stops the moment the
+no inbound port, so it works from a laptop behind NAT â€” and stops the moment the
 stack does. A webhook would instead need a public HTTPS endpoint (Koyeb, ngrok)
 and would keep working with the laptop off.
 
@@ -516,7 +521,7 @@ and would keep working with the laptop off.
    ```
 
 2. Start the poller. It is the **`telegram` Compose service**, so it comes up with
-   the stack and needs **no image rebuild** — the service reuses the
+   the stack and needs **no image rebuild** â€” the service reuses the
    `omnitrack-engine:local` image that is already built:
 
    ```powershell
@@ -560,14 +565,14 @@ and would keep working with the laptop off.
 projects, modules and tasks, so the authorisation check fails closed: with an
 empty list nobody is served, and a message from an unlisted chat is ignored and
 logged as a `warning`. While the list is empty the bot replies to strangers with
-nothing but their own chat id — the only way to learn yours without a debug
+nothing but their own chat id â€” the only way to learn yours without a debug
 console, and harmless once the list is filled in, because that branch is then dead.
 
 ### Behaviour worth knowing
 
 | Message | Routed to | Why |
 | --- | --- | --- |
-| Ends with `?`, or starts with `apa` / `berapa` / `status` / `list` / … | `summarize_board` (read-only) | The full-control agent runs with `tool_choice: required`, so it **always** returns a mutation. A question must never reach it. |
+| Ends with `?`, or starts with `apa` / `berapa` / `status` / `list` / â€¦ | `summarize_board` (read-only) | The full-control agent runs with `tool_choice: required`, so it **always** returns a mutation. A question must never reach it. |
 | Starts with `sinkron` / `sync` / `refresh` | `trigger_sync` | Queues the Google Sheets ingestion job. |
 | `/start`, `/help`, `/id` | Onboarding only | Everything else is meant to be said in plain language. |
 | Anything else | The full-control agent | The same 14 workspace tools and the same validation as the palette. |
@@ -575,7 +580,7 @@ console, and harmless once the list is filled in, because that branch is then de
 Other guarantees:
 
 - **Every update is stored before it runs.** `telegram_messages.update_id` is
-  unique, so a redelivery after an interrupted poll is a no-op — and the table
+  unique, so a redelivery after an interrupted poll is a no-op â€” and the table
   doubles as the long-poll cursor (`max(update_id) + 1`), surviving a restart
   without a second store.
 - **Replies are plain text.** Model output regularly contains `*`, `_` and
@@ -584,7 +589,7 @@ Other guarantees:
 - **A failed instruction still gets a reply** and is recorded as `failed`, so
   `telegram:status` shows the last error instead of failing silently.
 - **No token is harmless.** `telegram:poll` exits 0, and the service is declared
-  `restart: on-failure` — not `always` — precisely so an intentional exit 0 leaves
+  `restart: on-failure` â€” not `always` â€” precisely so an intentional exit 0 leaves
   the container stopped instead of hot-looping. A genuine crash (exit 1) is still
   restarted.
 
@@ -593,7 +598,7 @@ Other guarantees:
 ## Deploying to Koyeb
 
 1. Push this repository to GitHub.
-2. In Koyeb, **Create Service → GitHub**, pick the repo.
+2. In Koyeb, **Create Service â†’ GitHub**, pick the repo.
 3. **Builder:** Dockerfile. **Port:** `8080`. **Health check path:** `/up`.
 4. Add environment variables (mark secrets as *secret*):
 
@@ -679,8 +684,8 @@ tests/            Feature + Unit
 ## Data model
 
 ```
-sheet_sources 1─┐
-                └─< projects 1──< project_modules
+sheet_sources 1â”€â”
+                â””â”€< projects 1â”€â”€< project_modules
 tasks                          (standalone)
 ai_prompt_templates            (palette presets)
 telegram_messages              (bot audit log + long-poll cursor)
@@ -690,7 +695,7 @@ All primary keys are **ULID** (`HasUlids`), which keeps rows sortable by creatio
 time and avoids collisions when agents insert records offline.
 
 `projects` has a composite unique index on `(sheet_source_id, sheet_row_index)`
-— that is the reference key used by `upsert()` during ingestion.
+â€” that is the reference key used by `upsert()` during ingestion.
 
 ---
 
@@ -714,7 +719,7 @@ For day-to-day work the dev overlay is faster than the CI-shaped file above:
 rebuild, and a single test costs 2.7 s through the overlay against 4.0 s through
 `docker exec`, so pass `--filter=` liberally.
 
-Current status: **116 passed, 0 failed (517 assertions)**. The suite is green — the
+Current status: **116 passed, 0 failed (517 assertions)**. The suite is green â€” the
 last pre-existing failures were fixed alongside the bulk-CRUD work: the reorder
 tests were failing on `upsert()`, the board tests lacked `actingAs()`, and two
 assertions were stale against deliberate application decisions. See the testing
@@ -742,7 +747,7 @@ Things that differ from the PRD as written, and why:
 
 | PRD | Implemented | Reason |
 | --- | --- | --- |
-| `CMD ["/usr/bin/supervisord", ...]` | `entrypoint.sh` → supervisord | Gives an idempotent first boot: directories, `APP_KEY`, config cache, and migrations with retries for a slow managed Postgres |
+| `CMD ["/usr/bin/supervisord", ...]` | `entrypoint.sh` â†’ supervisord | Gives an idempotent first boot: directories, `APP_KEY`, config cache, and migrations with retries for a slow managed Postgres |
 | `command=docker-php-fpm` | `php-fpm --nodaemonize` | Alpine's PHP image has no `docker-php-fpm` binary; that program would crash-loop |
 | `stdout_logfile=/dev/stdout` for all programs | Same, plus `logfile=/dev/null` for supervisord | Supervisor writing its own log to a `/dev/stdout` *file* conflicts with nginx |
 | `apk del` dev packages in one stage | Separate `extensions` build stage | Deleting `libpng-dev` also removed the `libpng` runtime library, silently breaking the `gd` extension. The multi-stage build never removes runtime libs |
