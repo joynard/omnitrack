@@ -49,7 +49,6 @@ Push-Location $RepoRoot
 
 $Base   = 'docker-compose.yml'
 $Dev    = 'docker-compose.dev.yml'
-$Test   = 'docker-compose.test.yml'
 
 function Invoke-Compose {
     param(

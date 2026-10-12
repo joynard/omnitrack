@@ -18,6 +18,26 @@ use Symfony\Component\Finder\Finder;
  */
 class ObsidianVaultService
 {
+    /**
+     * Proven limits, as constants rather than env-overridable config.
+     *
+     * WHY: all four were read through config('services.obsidian.*') and none of
+     * them ever appeared in .env or .env.example, so the indirection only made the
+     * service look configurable. vault_path, vault_name and excluded_dirs stay in
+     * config because those do differ per machine.
+     */
+
+    /** Upper bound on one scan: a folder pointed at by mistake must not turn a page load into a several-minute walk. */
+    private const MAX_NOTES = 5000;
+
+    /** Bytes read per note while building the index: frontmatter and the first heading both live at the top. */
+    private const HEAD_BYTES = 4096;
+
+    /** Context characters returned around a search hit. */
+    private const SNIPPET_CHARS = 240;
+
+    /** Backlinks read a full body per candidate note, so the scan is capped. */
+    private const BACKLINK_SCAN_LIMIT = 400;
     /** Absolute path of the vault root, as configured. */
     public function path(): string
     {
@@ -276,7 +296,7 @@ class ObsidianVaultService
         }
 
         $root = $this->path();
-        $max = max(1, (int) config('services.obsidian.max_notes', 5000));
+        $max = self::MAX_NOTES;
 
         $finder = (new Finder())
             ->files()
@@ -323,7 +343,7 @@ class ObsidianVaultService
         $pattern = '/\[\[(?:[^\]\|#]*\/)?'.preg_quote($slug, '/').'(?:[#\|][^\]]*)?\]\]/i';
         $found = [];
         $scanned = 0;
-        $max = max(1, (int) config('services.obsidian.backlink_scan_limit', 400));
+        $max = self::BACKLINK_SCAN_LIMIT;
 
         foreach ($this->scan() as $note) {
             if ($scanned++ >= $max) {
@@ -505,7 +525,7 @@ class ObsidianVaultService
 
     private function snippet(string $body, int $offset, int $length): string
     {
-        $window = max(80, (int) config('services.obsidian.snippet_chars', 240));
+        $window = self::SNIPPET_CHARS;
         $start = max(0, $offset - (int) ($window / 2));
         $excerpt = mb_substr($body, $start, $window + $length);
 
@@ -523,7 +543,7 @@ class ObsidianVaultService
             return '';
         }
 
-        $head = (string) fread($handle, max(1024, (int) config('services.obsidian.head_bytes', 4096)));
+        $head = (string) fread($handle, self::HEAD_BYTES);
         fclose($handle);
 
         return $head;
