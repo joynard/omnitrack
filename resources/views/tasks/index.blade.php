@@ -56,7 +56,12 @@
         <div class="card-head" style="padding:16px 16px 0;margin-bottom:10px">
             <h2>Daftar Task</h2>
             <div class="head-actions">
-                <span class="card-note">Tarik baris untuk mengubah urutan.</span>
+                <span class="card-note hide-mobile">Tarik baris untuk mengubah urutan.</span>
+                <label class="field" style="margin-bottom:0">
+                    <span class="field-label">Cari</span>
+                    <input class="input input-sm" type="search" id="task-search"
+                           placeholder="judul, status…" autocomplete="off">
+                </label>
                 <label class="field" style="margin-bottom:0">
                     <span class="field-label">Filter status</span>
                     <select class="select select-sm" id="task-filter">

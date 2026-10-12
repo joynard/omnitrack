@@ -122,7 +122,14 @@
     <div class="card" style="padding:0" data-collapse="projects-list" data-collapse-default="open">
         <div class="card-head" style="padding:16px 16px 0;margin-bottom:10px">
             <h2 id="projects-heading">Semua Project</h2>
-            <span class="card-note">Tarik baris untuk mengubah urutan.</span>
+            <div class="head-actions">
+                <span class="card-note hide-mobile">Tarik baris untuk mengubah urutan.</span>
+                <label class="field" style="margin-bottom:0">
+                    <span class="field-label">Cari</span>
+                    <input class="input input-sm" type="search" id="project-search"
+                           placeholder="nama, role, owner…" autocomplete="off">
+                </label>
+            </div>
         </div>
 
         <div class="table-wrap" style="border:none">

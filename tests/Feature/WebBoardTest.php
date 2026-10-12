@@ -51,7 +51,10 @@ class WebBoardTest extends TestCase
             // Collapsible cards: the lists stay open, everything else starts closed.
             ->assertSee('data-collapse="projects-list" data-collapse-default="open"', escape: false)
             ->assertSee('data-collapse="projects-progress" data-collapse-default="closed"', escape: false)
-            ->assertSee('data-collapse="projects-add" data-collapse-default="closed"', escape: false);
+            ->assertSee('data-collapse="projects-add" data-collapse-default="closed"', escape: false)
+            // The list search box. Locked here because a silently missing input
+            // would leave the JS listener attached to nothing.
+            ->assertSee('id="project-search"', escape: false);
 
         $this->get('/tasks')
             ->assertOk()
@@ -59,7 +62,8 @@ class WebBoardTest extends TestCase
             ->assertSee('js/board-tasks.js', escape: false)
             ->assertSee('data-collapse="tasks-list" data-collapse-default="open"', escape: false)
             ->assertSee('data-collapse="tasks-add" data-collapse-default="closed"', escape: false)
-            ->assertSee('data-collapse="tasks-progress" data-collapse-default="closed"', escape: false);
+            ->assertSee('data-collapse="tasks-progress" data-collapse-default="closed"', escape: false)
+            ->assertSee('id="task-search"', escape: false);
     }
 
     public function test_board_projects_endpoint_returns_project_payload(): void

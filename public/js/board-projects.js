@@ -23,6 +23,7 @@
     var syncButton = document.getElementById('sync-button');
     var projectForm = document.getElementById('project-form');
     var projectsHeading = document.getElementById('projects-heading');
+    var projectSearch = document.getElementById('project-search');
 
     var categoryBar = document.getElementById('category-bar');
     var categorySelect = document.getElementById('project-category');
@@ -81,13 +82,51 @@
         return null;
     }
 
-    function visibleProjects() {
-        if (!activeCategory) {
-            return projects;
+    /**
+     * Open a collapsed card by key, for a caller that needs a panel inside it.
+     *
+     * WHY it clicks the toggle instead of tracking the flag here: the collapsed
+     * state and its localStorage persistence live in core.js, and a second writer
+     * would desync them. Driving the existing button keeps one owner, and needs no
+     * new public API for a single consumer.
+     */
+    function expandCard(key) {
+        var card = document.querySelector('.card[data-collapse="' + key + '"]');
+
+        if (!card || !card.classList.contains('is-collapsed')) {
+            return;
         }
 
+        var toggle = card.querySelector('.card-toggle');
+
+        if (toggle) {
+            toggle.click();
+        }
+    }
+
+    function visibleProjects() {
+        var needle = projectSearch ? projectSearch.value.trim().toLowerCase() : '';
+
         return projects.filter(function (project) {
-            return project.category_id === activeCategory;
+            if (activeCategory && project.category_id !== activeCategory) {
+                return false;
+            }
+
+            if (needle === '') {
+                return true;
+            }
+
+            // Searched across the columns the table actually shows, so a project
+            // is findable by its owner or department, not only by its name.
+            return [
+                project.name,
+                project.my_role,
+                project.department,
+                project.project_owner,
+                project.category_id ? categoryName(project.category_id) : null
+            ].some(function (value) {
+                return typeof value === 'string' && value.toLowerCase().indexOf(needle) !== -1;
+            });
         });
     }
 
@@ -144,8 +183,8 @@
             tbody.innerHTML = window.Omnitrack.emptyRow(
                 COLUMNS,
                 projects.length
-                    ? 'Tidak ada project di kategori ini.'
-                    : 'Belum ada project. Tekan Ctrl + P dan minta AI membuatkannya.'
+                    ? 'Tidak ada project yang cocok.'
+                    : 'Belum ada project. Tekan Ctrl + P dan minta Apollo membuatkannya.'
             );
             return;
         }
@@ -1052,9 +1091,18 @@
 
     if (categoryToggle && categoryManager) {
         categoryToggle.addEventListener('click', function () {
+            // WHY the card is expanded first: this button lives in a card head that
+            // is collapsed by default, so without it the panel opens out of sight
+            // and the click looks like it did nothing.
+            expandCard('projects-add');
+
             categoryManager.hidden = !categoryManager.hidden;
             categoryToggle.textContent = categoryManager.hidden ? 'Kelola Kategori' : 'Tutup';
         });
+    }
+
+    if (projectSearch) {
+        projectSearch.addEventListener('input', renderProjects);
     }
 
     if (categoryForm) {

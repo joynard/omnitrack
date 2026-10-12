@@ -11,6 +11,7 @@
     var list = document.getElementById('tasks-list');
     var form = document.getElementById('task-form');
     var filter = document.getElementById('task-filter');
+    var search = document.getElementById('task-search');
     var API = '/board/tasks';
 
     var cache = [];
@@ -81,29 +82,47 @@
 
     /* -------------------------------------------------------------- render */
 
-    function visibleTasks() {
-        var active = filter ? filter.value : '';
+    function activeQuery() {
+        return search ? search.value.trim().toLowerCase() : '';
+    }
 
-        if (!active) {
-            return cache;
+    /** Text match across the fields the row shows, so a task is findable by more
+     *  than its title, and by the label the user actually sees. */
+    function matchesQuery(task, needle) {
+        if (needle === '') {
+            return true;
         }
 
+        return [task.title, task.notes, task.status_label, task.priority_label, task.due_date]
+            .some(function (value) {
+                return typeof value === 'string' && value.toLowerCase().indexOf(needle) !== -1;
+            });
+    }
+
+    function visibleTasks() {
+        var active = filter ? filter.value : '';
+        var needle = activeQuery();
+
         return cache.filter(function (task) {
-            return task.status === active;
+            if (active && task.status !== active) {
+                return false;
+            }
+
+            return matchesQuery(task, needle);
         });
     }
 
     function render() {
         var tasks = visibleTasks();
 
-        // Dragging is only meaningful on the complete list; reordering a
-        // filtered subset would persist a partial id list.
-        var draggable = !(filter && filter.value);
+        // Dragging is only meaningful on the complete list; reordering a filtered
+        // or searched subset would persist a partial id list.
+        var draggable = !(filter && filter.value) && activeQuery() === '';
 
         if (!tasks.length) {
             list.innerHTML = '<li class="check-item"><div class="check-body">' +
                 '<div class="empty-hint">' +
-                (cache.length ? 'Tidak ada task dengan status ini.' : 'Belum ada task.') +
+                (cache.length ? 'Tidak ada task yang cocok.' : 'Belum ada task.') +
                 '</div></div></li>';
             return;
         }
@@ -127,8 +146,9 @@
         }
 
         var active = filter ? filter.value : '';
+        var needle = activeQuery();
 
-        if (active && task.status !== active) {
+        if (!matchesQuery(task, needle) || (active && task.status !== active)) {
             item.remove();
 
             if (!list.children.length) {
@@ -451,6 +471,10 @@
 
     if (filter) {
         filter.addEventListener('change', render);
+    }
+
+    if (search) {
+        search.addEventListener('input', render);
     }
 
     document.addEventListener('omnitrack:refresh', load);

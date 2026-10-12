@@ -541,6 +541,15 @@ a:hover {
     width: auto;
 }
 
+/* A compact text input for list searches: sized to sit in a card head beside the
+   status select without stretching to the full .input width. */
+.input-sm {
+    width: 180px;
+    padding: 5px 8px;
+    font-size: 12px;
+    height: auto;
+}
+
 .textarea {
     resize: vertical;
     min-height: 72px;
