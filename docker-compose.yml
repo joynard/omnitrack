@@ -39,7 +39,13 @@ services:
               required: false
         environment: *compose-environment
         ports:
-            - "8080:8080"
+            # Loopback only, not 0.0.0.0. Docker publishes to every interface by
+            # default, which put this app (and its /api/harness surface) on whatever
+            # network the laptop joined. The harness routes are token-guarded, but a
+            # dev stack has no reason to be reachable from a shared wifi. Widen this
+            # back to "8080:8080" only if the board must be opened from another
+            # device on the same LAN.
+            - "127.0.0.1:8080:8080"
         volumes:
             # Persist injected Google credentials and application storage.
             - ./storage/app/google:/var/www/html/storage/app/google
@@ -95,7 +101,11 @@ services:
         restart: unless-stopped
         ports:
             # 5433 on the host to avoid clashing with a local Postgres install.
-            - "5433:5432"
+            # WHY loopback: this host port exists so a tool ON the host can reach
+            # Postgres. Nothing else needs it -- the app connects over the compose
+            # network -- so binding it to every interface only offered the LAN a
+            # password-guarded database.
+            - "127.0.0.1:5433:5432"
         environment:
             POSTGRES_DB: omnitrack
             POSTGRES_USER: omnitrack
