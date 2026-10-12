@@ -196,6 +196,14 @@ Two rules make regeneration safe:
   `./scripts/vault-sync.ps1` without `-Apply` only reports: checklist
   disagreements, notes that need regenerating, and notes nothing links to.
 
+Re-running is cheap when only one note is stale: pass
+`-Only 'PT SPIL/Forecast Container'` (an area, `Area/Project`, or a name
+fragment) and the generator rewrites just those project notes, reusing a cached
+folder inventory. Measured: 1.0 s for one note, 1.6 s for everything with the
+cache, 72 s with `-Fresh`. Areas, MOC, Home, Rencana, Ide, the journal and the
+templates are only rewritten on a full run, because they describe the whole
+workspace.
+
 ---
 
 ## Google Sheet column mapping
@@ -701,7 +709,12 @@ docker compose -f docker-compose.test.yml run --rm --no-deps --entrypoint php te
 needed. Tests must never reach external APIs; the suite runs with
 `DEEPSEEK_API_KEY` empty precisely to prove the fallbacks work.
 
-Current status: **93 passed, 0 failed (412 assertions)**. The suite is green — the
+For day-to-day work the dev overlay is faster than the CI-shaped file above:
+`./scripts/dev.ps1 test` runs the same suite with the source bind-mounted and no
+rebuild, and a single test costs 2.7 s through the overlay against 4.0 s through
+`docker exec`, so pass `--filter=` liberally.
+
+Current status: **116 passed, 0 failed (517 assertions)**. The suite is green — the
 last pre-existing failures were fixed alongside the bulk-CRUD work: the reorder
 tests were failing on `upsert()`, the board tests lacked `actingAs()`, and two
 assertions were stale against deliberate application decisions. See the testing

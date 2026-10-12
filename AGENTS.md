@@ -3,35 +3,8 @@
 Laravel 13 / PHP 8.3 API. Docker Compose for local dev, Postgres in production,
 Google Sheets sync and a DeepSeek-backed command palette.
 
-## Working style: minimise round trips
-
-These rules exist because a previous session spent **16 tool calls across 8
-sequential rounds** answering a question that needed two. The machine was idle
-the whole time (CPU 4-12%, disk latency 0.4 ms) -- the cost was entirely
-self-inflicted. Do not repeat it.
-
-1. **Form a hypothesis before the first command.** State what you expect and
-   what would falsify it. Do not "gather data and see".
-2. **One reconnaissance round.** Every independent command goes into a *single*
-   message as parallel calls. Never read files one at a time across rounds.
-3. **Budget: 4 tool calls for a diagnostic question, 8 for a code change.**
-   Exceeding it means the approach is wrong, not that more calls are needed.
-   Exceeding it twice in one task: stop and say so.
-4. **Batch commands inside one `pwsh` call.** A fresh PowerShell process costs
-   ~0.5 s of startup; eleven separate calls paid it eleven times. Use
-   `Write-Output '=== section ==='` separators instead of new invocations.
-5. **Validate shell syntax before sending it.** Two calls in that session died
-   on nested-quote breakage inside a `docker inspect --format` template. For any
-   Docker `--format` containing quotes, prefer `--format '{{json .Field}}'` piped
-   to `ConvertFrom-Json`, or drop to `--format` with no nested quotes at all.
-6. **Never re-run a command whose result is already in context.** That session
-   searched for the same VHDX file twice.
-7. **No subagents in this repository.** The context is small enough to hold;
-   a fork re-serialises the whole conversation for no benefit.
-8. **Report, do not narrate.** No progress commentary between tool calls. The
-   final answer carries the reasoning.
-9. **`todo_write` for any task of three or more steps**, so completed work is
-   visible and cannot be silently repeated.
+User-global rules (communication style, code standards, context hygiene) live in
+`~/.dsh/AGENTS.md` and are injected before this file. Do not repeat them here.
 
 ## Environment facts (verified, do not re-discover)
 
@@ -44,304 +17,136 @@ self-inflicted. Do not repeat it.
 | Frontend toolchain | **None.** No `package.json`, no Vite, no `node_modules` |
 | Container PHP | 8.3-fpm-alpine (nginx + php-fpm + supervisor in one image) |
 | Docker Compose | v5.1.3, `develop.watch` supported |
-| Compose project name | `omnitrack` -- set by `COMPOSE_PROJECT_NAME` in `.env`, not derived |
+| Compose project name | `omnitrack` -- from `COMPOSE_PROJECT_NAME` in `.env`, not derived |
 | Git remote | `origin` = `https://github.com/joynard/omnitrack.git`, branch `main` |
-| Built images | `omnitrack-engine:local` and `omnitrack-engine:test`, both present |
-| Containers | `omnitrack-app` (8080) and `omnitrack-db` (5433), both healthy when up |
+| Built images | `omnitrack-engine:local` and `omnitrack-engine:test` |
+| Containers | `omnitrack-app` (8080) and `omnitrack-db` (5433) |
 | Host disk | C: 30 GB free of 477 GB **-- tight**; D: 1.36 TB free |
-| Docker data disk | `C:\Users\alexa\AppData\Local\Docker\wsl\disk\docker_data.vhdx` (79 GB) |
+
+Every `php` command runs **inside the container**: there is no host PHP path for
+`artisan`, `phpunit` or `composer` (wrong version, and XAMPP has no `pdo_pgsql`).
 
 **Do not touch the Docker/WSL resource configuration.** Docker Desktop's own WSL
-distro is the supported setup here; `~/.wslconfig` must not be created and
-memory/CPU limits must not be tuned by an agent. WSL's resource management is
-left entirely to Docker Desktop as shipped.
-
-**Consequence:** every `php` command runs **inside the container**. There is no
-host PHP path for `artisan`, `phpunit` or `composer`. Do not attempt
-`php artisan ...` on the host; it fails on the version constraint, and even if
-the version matched, `pdo_pgsql` is absent from XAMPP.
+distro is the supported setup; `~/.wslconfig` must not be created and memory/CPU
+limits must not be tuned by an agent.
 
 ## Commands -- always use these
 
 `scripts/dev.ps1` (Windows) and `scripts/dev.sh` (POSIX) wrap the two-file
-Compose invocation. Use them instead of typing `-f` flags:
+Compose invocation. Use them instead of typing `-f` flags.
 
 ```powershell
-./scripts/dev.ps1 init                  # once: .env check + vendor/ into its volume
 ./scripts/dev.ps1 up                    # start app + db, source bind-mounted
 ./scripts/dev.ps1 test                  # PHPUnit suite, no rebuild
 ./scripts/dev.ps1 test --filter=Harness # one test
 ./scripts/dev.ps1 artisan migrate
-./scripts/dev.ps1 tinker
 ./scripts/dev.ps1 composer require foo/bar
-./scripts/dev.ps1 logs app
 ./scripts/dev.ps1 down                  # add -v to drop named volumes
 ```
 
-Raw equivalent, if a script is unavailable -- and note that `--profile test` is
-only needed for `run`/`down`/`ps`/`exec`, never for `up`:
+Raw equivalent; `--profile test` is only for `run`/`down`/`ps`/`exec`, never `up`:
 
 ```
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
-docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile test run --rm --pull never test
+docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile test run --rm --pull never test php artisan test
 ```
+
+A single test is faster through the overlay service than through `docker exec`
+(measured: 2.7 s vs 4.0 s), so always pass `--filter=`.
 
 ## Build and iteration cost -- respect this
 
-`Dockerfile` compiles PHP extensions (gd, intl, zip, pdo_pgsql, pcntl) in a
-throwaway stage. A cold `docker compose build` is **minutes**. Structure every
-change so it does not need one.
+`Dockerfile` compiles PHP extensions (gd, intl, zip, pdo_pgsql, pcntl). A cold
+build is **minutes**. Structure every change so it does not need one.
 
 | Change | Rebuild needed? |
 |---|---|
-| Any file under `app/`, `routes/`, `config/`, `tests/`, `resources/` | **No** |
-| `docker/php.dev.ini` | **No** -- re-read per request (`validate_timestamps=1`) |
+| Anything under `app/`, `routes/`, `config/`, `tests/`, `resources/` | **No** |
+| `docker/php.dev.ini` (mounted as `zz-dev.ini`) | **No** |
 | `.env` | **No** -- but restart the container so FPM re-reads it |
-| `composer.json` / `composer.lock` | No rebuild; run `dev.ps1 composer install` |
+| `composer.json` / `composer.lock` | No rebuild; `dev.ps1 composer install` |
 | `Dockerfile`, `docker/nginx.conf`, `docker/entrypoint.sh` | **Yes** -- `dev.ps1 build` |
 
-`docker-compose.dev.yml` bind-mounts the source tree, so editing a file is
-enough. This is the single most important efficiency property of the repo.
-
-**Keep `vendor/` and `node_modules/` in named volumes, never bind-mounted.**
-They live on the Linux filesystem inside WSL. A `vendor/` on NTFS means tens of
-thousands of small reads crossing the 9p boundary on every request.
+`docker-compose.dev.yml` bind-mounts the source, so editing a file is enough.
+Keep `vendor/` and `node_modules/` in named volumes, never bind-mounted: a
+`vendor/` on NTFS means tens of thousands of small reads across the 9p boundary.
 
 ## Testing
 
-- PHPUnit 12. Tests run on **in-memory SQLite** (`phpunit.xml`), so no database
-  service is required and `dev.ps1 test` works with `db` stopped.
-- `.env.testing` must exist or Laravel emits a `file_get_contents()` warning
-  that PHPUnit 12 reports as a warning-level result.
-- The `test` service uses the `testing` Dockerfile target -- the runtime image
-  plus dev dependencies. The production image ships without PHPUnit on purpose.
-- Run the suite after every change. It is the fastest verification available and
-  costs no rebuild.
-
-### The suite passes: 94 passed, 0 failed
-
-Historically this repository shipped with 16 failing tests and a long note here
-explaining why they were "pre-existing". That is over. **Run the suite and expect
-green.** A red suite is now evidence that your change broke something.
-
-What those 16 actually were, because the old note got two of the causes wrong:
-
-- **11 board tests** failed at 302/401 because `routes/web.php` puts `/`,
-  `/projects`, `/board/*`, `/ai/*` and `/sync/*` behind `auth` while
-  `WebBoardTest` and `WorkspaceControlTest` never signed a user in. Fixed with a
-  `setUp()` that calls `actingAs(User::factory()->create())`.
-- **4 reorder tests** failed with `NOT NULL constraint failed: projects.name`
-  (same for `tasks.title`, `project_modules.project_id`). The old note blamed the
-  tests for inserting models with only `order_index` set. That was wrong: the
-  cause was `reorderByIds()` calling `upsert()`, which proposes a whole INSERT
-  tuple and therefore requires every NOT NULL column to be present. It is now a
-  single `CASE` expression in `app/Models/Concerns/ReordersByIds.php`, and that
-  expression writes `cast(? as integer)` because PostgreSQL otherwise infers the
-  bound parameter as `text` and refuses the assignment -- SQLite alone would not
-  have caught it.
-- **2 stale assertions**, updated to match deliberate application decisions:
-  `HarnessApiTest` expected a top-level `created_count` that no route ever
-  returned, and `WebBoardTest` expected the literal "AI Command Palette" when the
-  view renders "AI Palette". `WebBoardTest` also called `$this->seed()` for
-  palette presets that `DatabaseSeeder` deliberately no longer creates.
+- PHPUnit 12 on **in-memory SQLite**, so no database service is needed.
+- Run the suite after every change and expect **green**. A red suite is evidence
+  your change broke something; the 16 historical failures (auth-less board tests,
+  an `upsert()`-based reorder, two stale assertions) are fixed and documented only
+  in the git log.
 
 ## Known traps
 
-- **`APP_ENV=production` in the dev stack is dangerous.** The entrypoint then
-  runs `config:cache` and `route:cache`, baking current env values into the
-  container so later `.env` edits silently stop taking effect.
-- **OPcache in the image has `validate_timestamps=0`** (correct for production).
-  `docker/php.dev.ini` overrides it to `1` with `revalidate_freq=0` -- but it MUST
-  be mounted as `zz-dev.ini`, not `99-dev.ini`. PHP loads `conf.d` in alphabetical
-  order and the image's own file is `99-omnitrack.ini`, so a `99-dev.ini` sorted
-  FIRST and lost every shared directive, silently leaving
-  `validate_timestamps=Off` in the dev stack. This note used to say "check that
-  the file is still mounted", which was the wrong remedy: the mount was always
-  fine and the ordering was the bug. Symptom to recognise it by: PHP edits appear
-  not to apply, yet a fresh CLI process (`artisan route:list`) sees the new code
-  while HTTP does not. Fixed 2026-10-09 -- the dev overlay mounts `zz-dev.ini` in
-  `app`, `telegram` and `test`.
-- **`.env` has `DB_CONNECTION=sqlite`** for host/legacy use and
-  `DB_DATABASE_PGSQL=omnitrack`. Compose injects the real Postgres settings and
-  those environment values win over `.env`. Do not "fix" `.env` to match.
-- **Quote every `.env` value containing a space.** phpdotenv rejects an unquoted
-  space with `The environment file is invalid!` and refuses to load *any* of the
-  file. The failure surfaces as a bare non-zero exit from `artisan`, including
-  the `package:discover` hook that runs after `composer install`, so it looks
-  like a Composer problem when it is not. `OMNITRACK_USER_NAME` was the offender
-  (fixed to `"Alexander Fabian"`); values like `APP_NAME=Omnitrack` are fine
-  because they have no space.
-- **Do not run `docker system prune -a --volumes` casually.** The Docker data
-  disk holds images for other projects (`tatakeloladmaic`, from
-  `D:\Projects\PT SPIL\Tata kelola DMAIC`). Prefer `docker builder prune`.
-- **Check the Compose project name before acting on containers.** It is
-  `omnitrack`, from `COMPOSE_PROJECT_NAME` in `.env`. Without that variable
-  Compose derives the project from the directory name, and this directory is
-  `Projects & Event Management` -- which yields `projectseventmanagement` and
-  makes the stack nearly impossible to find in the Docker Desktop UI, since the
-  UI groups by project name and ignores every `container_name`. Never export
-  `COMPOSE_PROJECT_NAME` from a script: an exported value overrides `.env` and
-  silently creates a second, empty set of volumes (`omnitrack_*` vs
-  `projectseventmanagement_*`), which is exactly what happened once already.
-- **Enabling a Compose profile also starts that profile's services.** Passing
-  `--profile test` to `up` boots `omnitrack-test-1`, which then runs
-  `php artisan test` under the dev entrypoint and exits 2. Use profiles for
-  `down`, `ps`, `exec` and `run`; never for `up`, `build` or `restart`. The dev
-  scripts encode this (`Get-DevArgs` in dev.ps1, `dc_test` vs `dc_run` in
-  dev.sh).
-- **`docker compose down` deletes containers and the network, not just stops
-  them.** After a `down` the stack is absent from `docker ps -a` entirely, which
-  is the difference between "not running" and "gone". Use `stop` to merely halt.
+- **`APP_ENV=production` in the dev stack is dangerous:** the entrypoint then runs
+  `config:cache` / `route:cache`, baking current env values into the container.
+- **PHP edits that "do not apply" mean an ini ordering problem, not a stale
+  mount.** `conf.d` loads alphabetically and the image ships `99-omnitrack.ini`,
+  so the dev overlay must mount `zz-dev.ini` (never `99-dev.ini`). Symptom:
+  `artisan route:list` sees new code while HTTP does not.
+- **`.env` holds the real database password, `DEEPSEEK_API_KEY` and
+  `HARNESS_SECRET_TOKEN`; never commit it.** `.gitignore` covers `.env`,
+  `.env.backup`, `.env.production`, `auth.json` and `storage/app/google/*.json`.
+- **Quote every `.env` value containing a space**, or phpdotenv rejects the whole
+  file and every `artisan` command fails with a bare non-zero exit.
 - **Module status drives project status, and mass updates bypass model events.**
-  `ProjectModule::booted()` rolls the parent project up on every single-row save or
-  delete (all modules done -> project done; anything still open -> a project that
-  claimed to be done reopens as in_progress; pending vs in_progress is left to the
-  user). But `ProjectModule::query()->...->update()` / `->delete()` fire NOTHING,
-  so every bulk path must call `Project::syncStatusesFor($projectIds)` itself --
-  with the ids captured BEFORE the write, because a moved module no longer knows
-  the project it left. Forgetting this is silent: the checklist moves and the
-  project status does not.
-- **`docker ps` hides stopped containers.** Docker Desktop shows only running
-  containers unless "Show stopped containers" is enabled, so a stopped
-  `omnitrack-app` is invisible in both places.
+  `ProjectModule::booted()` rolls the parent up on a single-row save or delete
+  (all modules done -> done; anything open -> a project claiming done reopens as
+  in_progress; pending vs in_progress stays the user's call). `ProjectModule::query()->...->update()`
+  / `->delete()` fire NOTHING, so every bulk path must call
+  `Project::syncStatusesFor($projectIds)` itself, with the ids captured BEFORE the
+  write. Forgetting it is silent: the checklist moves, the status does not.
+- **Never export `COMPOSE_PROJECT_NAME`.** An exported value overrides `.env` and
+  silently creates a second, empty set of volumes.
+- **`--profile test` starts that profile's services.** Use profiles for `down`,
+  `ps`, `exec` and `run`; never for `up`, `build` or `restart`.
+- **`docker compose down` deletes containers and the network**, and `docker ps`
+  hides stopped containers unless "Show stopped containers" is enabled. Use
+  `stop` to merely halt.
+- **Do not run `docker system prune -a --volumes` casually**: the Docker data disk
+  holds images for other projects (`tatakeloladmaic`). Prefer `docker builder prune`.
 
-## Production readiness -- what is and is not wired up
+## Production readiness (Koyeb)
 
-The runtime image is production-shaped: multi-stage `Dockerfile` with a frozen
-`runtime` target, production OPcache in `docker/php.ini`, nginx + php-fpm +
-queue-worker under supervisor, migrations-with-retry in `docker/entrypoint.sh`,
-and an unauthenticated `GET /up` health check for Koyeb. `README.md` documents
-the Koyeb steps and the full production variable list.
-
-Verified gaps as of the initial commit:
-
-1. **The git remote exists and `main` is pushed.** `origin` is
-   `https://github.com/joynard/omnitrack.git`, and the initial history is on the
-   remote. A deploy can therefore start; it has not been started.
-2. **The scheduler is not running in production.** `routes/console.php`
-   schedules `SyncGoogleSheetJob` hourly, but `docker/supervisord.conf` defines
-   only php-fpm, nginx and queue-worker. There is no `schedule:work` program, so
-   hourly sheet sync never fires. `README.md` acknowledges this.
-3. **The database is never seeded on deploy, so a fresh production instance has
-   no login.** `docker/entrypoint.sh` runs `migrate --force` and nothing else.
-   `DatabaseSeeder` creates **only** the single login account -- deliberately, see
-   its class comment: the starting categories, the `SheetSource` row and the six
-   palette presets used to be seeded too and were removed, because
-   `migrate:fresh --seed` is the documented reset command and would otherwise
-   wipe real projects just to recreate fixtures. So a deploy needs one
-   `db:seed` for the account, and the Ctrl+P palette legitimately starts empty.
-   The README's Koyeb section does not mention `db:seed`, nor the
-   `OMNITRACK_USER_*` variables the seeder reads.
-4. **No CI.** The `testing` Dockerfile target exists for exactly this purpose
-   but nothing invokes it. The suite is green as of the bulk-CRUD work (94
-   passing), so a CI job is now viable -- see the testing section above.
-5. **Not deployed.** Nothing in this repository has been run with
-   `APP_ENV=production`; all verification to date is local-only.
-
-### Deploying: the seeding step the README omits
-
-Required variables for the seeder, none of which appear in the README list:
-
-```
-OMNITRACK_USER_NAME=...
-OMNITRACK_USER_EMAIL=...
-OMNITRACK_USER_PASSWORD=...
-```
-
-Then, once, against the running instance:
-
-```
-php artisan db:seed --force
-```
-
-The seeder is idempotent: `firstOrNew`/`firstOrCreate` everywhere, and it only
-resets the password when `OMNITRACK_USER_PASSWORD` is non-empty. It also deletes
-every account whose email differs from `OMNITRACK_USER_EMAIL` -- intentional for
-a single-user tool, but it means changing that variable locks out the old login.
-
-If `OMNITRACK_USER_PASSWORD` is empty, the seeder still creates the user with a
-random 16-character password and warns on stdout. That account can never be
-logged into, so set the variable before seeding.
-
-Never commit `.env`: it holds the real database password, `DEEPSEEK_API_KEY` and
-`HARNESS_SECRET_TOKEN`. The first commit was audited and contains none of them,
-and `.gitignore` covers `.env`, `.env.backup`, `.env.production`, `auth.json`
-and `storage/app/google/*.json`. Re-audit with `git ls-files` after adding any
-new configuration file.
+| Gap | Detail |
+|---|---|
+| Scheduler | `routes/console.php` schedules `SyncGoogleSheetJob` hourly, but `docker/supervisord.conf` has no `schedule:work`, so it never fires |
+| Seeding | `docker/entrypoint.sh` runs `migrate --force` only. A fresh instance has no login until `php artisan db:seed --force` with `OMNITRACK_USER_NAME` / `_EMAIL` / `_PASSWORD` set |
+| CI | None, although the `testing` Dockerfile target exists for exactly that |
+| Deployed? | No. Nothing here has run with `APP_ENV=production` |
 
 ## Second Brain (Obsidian vault)
-
-Alexander's personal knowledge vault is read by this app, never written by it:
 
 | Fact | Value |
 |---|---|
 | Host vault | `D:\Alexander Files\Alexander\Obsidian Vaults\Second Brain` |
-| Container mount | `/vault`, **read-only**, declared in `docker-compose.dev.yml` for `app` and `telegram` |
-| Host-path override | `OBSIDIAN_VAULT_HOST_PATH` in `.env` (Compose interpolation) |
-| In-container path | `OBSIDIAN_VAULT_PATH` (default `/vault`), `OBSIDIAN_VAULT_NAME` for `obsidian://` links |
-| Code | `app/Services/ObsidianVaultService.php`, `app/Http/Controllers/VaultController.php`, `resources/views/vault/index.blade.php`, `public/js/vault.js` |
-| UI | `http://localhost:8080/vault` (nav: "Second Brain") |
-| Agent surface | `GET /api/harness/vault`, `/vault/notes`, `/vault/search`, `/vault/note?path=` |
-| Tests | `tests/Feature/ObsidianVaultTest.php` (throwaway vault in the system temp dir) |
-| Note generator (pull) | `scripts/vault-notes.ps1` -- writes the vault's `Projects/`, `Areas/`, `Rencana/`, `Journal/Rekap/`, `Ide/`, `Home` and `Templates/` from this app |
-| Note bridge (push) | `scripts/vault-sync.ps1` -- reports checklist disagreements and orphan notes; `-Apply` sends Obsidian ticks to Omnitrack |
+| Container mount | `/vault`, **read-only**, in `docker-compose.dev.yml` for `app` and `telegram` |
+| Env | `OBSIDIAN_VAULT_HOST_PATH` (Compose), `OBSIDIAN_VAULT_PATH` (default `/vault`), `OBSIDIAN_VAULT_NAME` |
+| Code | `app/Services/ObsidianVaultService.php`, `VaultController`, `resources/views/vault/`, `public/js/vault.js` |
+| Surfaces | UI `/vault`; agents `GET /api/harness/vault`, `/notes`, `/search`, `/note?path=` (all GET) |
+| Scripts | `scripts/vault-notes.ps1` (pull: writes notes; `-Only <Area\|Project>` refreshes one note in 1 s with the cached layout, a full run is 72 s); `scripts/vault-sync.ps1` (report; `-Apply` pushes ticks) |
+| Tests | `tests/Feature/ObsidianVaultTest.php` against a throwaway vault |
 
-Nothing about the vault is stored in Postgres: a note is a file, and a second copy
-would only be a second thing to keep in sync. The service scans on demand
-(`max_notes` caps one scan), reads only the first 4 kB of each note to build the
-index, and degrades to `available: false` when the mount is absent -- which is
-exactly the production case, since only the dev overlay mounts it.
+Nothing about the vault is stored in Postgres: a note is a file. The service
+scans on demand and degrades to `available: false` when the mount is absent, which
+is the production case. `resolve()` is the security boundary: reject absolute
+paths, `..` or hidden segments, non-`.md`, and anything outside the vault after
+`realpath()`. Do not "simplify" it into `file_get_contents($vault.'/'.$path)`.
 
-`resolve()` is the security boundary: a path arriving from the browser or an agent
-is rejected if it is absolute, contains a `..` or hidden/excluded segment, is not
-`.md`, or (after `realpath()`) lands outside the vault. Do not "simplify" it into
-a plain `file_get_contents($vault.'/'.$path)`.
+Note bridge rules: generated notes carry `generated: vault-notes` and are the only
+thing the generator replaces; hand-written text lives between
+`<!-- omnitrack:keep -->` markers, keyed by the heading above it, and is read back
+into a cache **before** cleanup deletes the files; the module checklist block is
+always written from this app (pull), and `vault-sync.ps1 -Apply` is the push.
 
-Adding a note the UI should see needs no migration and no cache flush; a note
-deleted on the host disappears from the next scan. Only the frontmatter parser is
-deliberately small (scalars, inline lists, dash lists) -- nested YAML is not
-supported and is not needed for `title` and `tags`.
-
-### The note bridge (scripts/vault-notes.ps1 and scripts/vault-sync.ps1)
-
-The vault is a projection of this app plus Alexander's own prose, and the two are
-kept apart by markers rather than by trust:
-
-- **Generated notes carry `generated: vault-notes`.** That is the only thing the
-  generator is allowed to replace; a note without it is never touched.
-- **Hand-written text lives between `<!-- omnitrack:keep -->` and
-  `<!-- /omnitrack:keep -->`**, keyed by the `##` heading directly above it. The
-  generator reads every keep-block into a cache *before* it deletes the stale
-  files -- reading them afterwards returns empty, and the paragraph is gone.
-  The heading lookup must not walk past an intermediate `##`, or every block
-  lands in the first section of the note.
-- **The module checklist block (`<!-- omnitrack:modules -->`) is always written
-  from this app**: that is the pull side. Ticking a box there and running
-  `vault-sync.ps1 -Apply` is the push side, which posts to
-  `/api/harness/modules/{id}`. Regenerating without pushing first overwrites the
-  local ticks -- deliberately, so the direction of every write stays obvious.
-- `vault-sync.ps1` also reports note-level health: how many notes have no
-  incoming wikilink (Obsidian's orphan view) and which notes need regenerating.
-- Both scripts read the vault path from `OBSIDIAN_VAULT_HOST_PATH` and normalise
-  it to backslashes: `.env` writes forward slashes, and a mixed-separator path
-  never compares equal to a `Get-ChildItem` FullName.
-
-PowerShell notes, because both scripts hit these: `/* */` is not a comment,
-`@($json | ConvertFrom-Json)` wraps a top-level array as ONE element in 5.1, and
-`@($null)` is a one-element array -- so a "no rows" result must be an explicit
-`@()`, ideally returned as `,@()` and consumed without another `@()`.
-
-### The DSH side of the same integration
-
-`D:\Projects\AGENTS.md` tells every agent session in that workspace that the vault
-exists, and the user-level skill at `~/.dsh/skills/second-brain/SKILL.md` carries
-the full procedure (search recipes, wikilink rules, harness endpoints). Both are
-outside this repository on purpose: they describe Alexander's machine, not the app.
+`D:\Projects\AGENTS.md` and the user skill `~/.dsh/skills/second-brain/SKILL.md`
+describe the same integration outside this repository on purpose.
 
 ## Conventions
 
-- Match the existing comment density. Every non-obvious decision in `Dockerfile`,
-  `docker-compose.yml` and `docker/entrypoint.sh` is explained with a `WHY`.
-  Follow that: explain the reason, not the syntax.
+- Explain the reason, not the syntax: every non-obvious decision carries a `WHY`.
 - 4-space indentation in YAML, PHP and JSON; `.editorconfig` governs the rest.
 - No frontend build step exists. Do not add one without being asked.
