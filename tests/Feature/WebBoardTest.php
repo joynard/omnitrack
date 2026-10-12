@@ -114,7 +114,7 @@ class WebBoardTest extends TestCase
             'category_id' => $owned->id,
             'status' => 'done',
         ]);
-        Project::factory()->create([
+        $jalan = Project::factory()->create([
             'name' => 'Jalan',
             'category_id' => $owned->id,
             'status' => 'in_progress',
@@ -122,7 +122,11 @@ class WebBoardTest extends TestCase
         Project::factory()->create(['name' => 'Antre', 'status' => 'pending']);
 
         ProjectModule::factory()->create(['project_id' => $done->id, 'title' => 'M1', 'status' => 'done']);
-        ProjectModule::factory()->create(['project_id' => $done->id, 'title' => 'M2', 'status' => 'pending']);
+        // The open module hangs off the in_progress project, not the done one: a
+        // finished project with an unfinished module is exactly the contradiction
+        // Project::syncStatusFromModules() now refuses, and writing one here would
+        // silently demote "Selesai" before the summary is read.
+        ProjectModule::factory()->create(['project_id' => $jalan->id, 'title' => 'M2', 'status' => 'pending']);
 
         Task::factory()->create(['title' => 'T1', 'status' => 'done']);
         Task::factory()->create(['title' => 'T2', 'status' => 'in_progress']);

@@ -523,6 +523,10 @@ class AiOrchestrator
             throw new RuntimeException('Tidak ada perubahan yang diminta.');
         }
 
+        // Captured before the write: a module that moves must make BOTH projects
+        // roll up, and the source project is only knowable from the current rows.
+        $touchedProjects = $modules->pluck('project_id')->all();
+
         // A move and a per-row shift cannot be ONE mass UPDATE: the move needs a
         // distinct order_index per row (appended after the destination's current
         // maximum) and the shift needs each row's own date. Both go through the
@@ -554,12 +558,22 @@ class AiOrchestrator
             ProjectModule::query()->whereIn('id', $modules->modelKeys())->update($attributes);
         }
 
+        // WHY an explicit rollup: the mass-update branch above fires no model
+        // events, and a move changes two projects at once, so ProjectModule's own
+        // saved/deleted hooks cannot cover this path.
+        Project::syncStatusesFor(array_merge($touchedProjects, $destination !== null ? [$destination] : []));
+
         if ($modules->count() === 1) {
             $module = $modules->first()->fresh();
 
             return [
                 'message' => 'Modul "'.$module->title.'" diperbarui.',
-                'data' => ['module' => $this->modulePayload($module)],
+                'data' => [
+                    'module' => $this->modulePayload($module),
+                    // The parent's status may have rolled up as a result, so report
+                    // it instead of making the caller re-read the board.
+                    'project_status' => $module->project?->status?->value,
+                ],
             ];
         }
 
@@ -596,7 +610,12 @@ class AiOrchestrator
         );
 
         $titles = $modules->pluck('title')->all();
+        // Captured first: the rows are gone afterwards, and a mass delete fires no
+        // model events, so the rollup needs the project ids up front.
+        $touchedProjects = $modules->pluck('project_id')->all();
         $deleted = ProjectModule::query()->whereIn('id', $modules->modelKeys())->delete();
+
+        Project::syncStatusesFor($touchedProjects);
 
         $message = count($titles) === 1
             ? 'Modul "'.$titles[0].'" dihapus.'

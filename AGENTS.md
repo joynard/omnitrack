@@ -192,6 +192,15 @@ What those 16 actually were, because the old note got two of the causes wrong:
 - **`docker compose down` deletes containers and the network, not just stops
   them.** After a `down` the stack is absent from `docker ps -a` entirely, which
   is the difference between "not running" and "gone". Use `stop` to merely halt.
+- **Module status drives project status, and mass updates bypass model events.**
+  `ProjectModule::booted()` rolls the parent project up on every single-row save or
+  delete (all modules done -> project done; anything still open -> a project that
+  claimed to be done reopens as in_progress; pending vs in_progress is left to the
+  user). But `ProjectModule::query()->...->update()` / `->delete()` fire NOTHING,
+  so every bulk path must call `Project::syncStatusesFor($projectIds)` itself --
+  with the ids captured BEFORE the write, because a moved module no longer knows
+  the project it left. Forgetting this is silent: the checklist moves and the
+  project status does not.
 - **`docker ps` hides stopped containers.** Docker Desktop shows only running
   containers unless "Show stopped containers" is enabled, so a stopped
   `omnitrack-app` is invisible in both places.

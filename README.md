@@ -253,6 +253,25 @@ Deleting a category **never deletes its projects**: the foreign key is
 
 ---
 
+## Project status follows the checklist
+
+Ticking every module of a project marks the project itself **Done**, and a project
+that still has an open module can no longer claim to be Done — it reopens as In
+Progress. Which transitions happen automatically is deliberately narrow:
+
+| Module states | Project status |
+| --- | --- |
+| Every module done | `done` (always) |
+| Something still open, project was `done` | `in_progress` |
+| Nothing started yet | left alone — `pending` vs `in_progress` is your call |
+| No modules at all | left alone |
+
+The rule lives in `Project::syncStatusFromModules()` and is applied from
+`ProjectModule` model events, so the board UI, the AI palette, the Telegram bridge
+and the harness API all behave identically. A mass `update()`/`delete()` fires no
+model events, so the bulk module endpoints call `Project::syncStatusesFor()`
+explicitly with the projects they touched.
+
 ## Reordering
 
 Order is stored explicitly as `order_index` on projects, modules and tasks.

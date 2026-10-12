@@ -334,6 +334,53 @@
         window.Omnitrack.notify('Project dihapus.', 'success');
     }
 
+    /**
+     * Apply the project rollup the server returned with a module write.
+     *
+     * Ticking the last module, deleting the last open one, or adding a module to a
+     * finished project changes the PROJECT's status, not just the checklist, so the
+     * chip in the dialog and in the table row have to follow. The server is the one
+     * that decides (Project::syncStatusFromModules); this only paints it.
+     */
+    function applyProjectRollup(rollup, previousStatus) {
+        if (!rollup || !currentProject) {
+            return;
+        }
+
+        currentProject.status = rollup.status;
+        currentProject.status_label = rollup.status_label;
+        currentProject.status_class = rollup.status_class;
+        currentProject.progress = rollup.progress;
+        currentProject.modules_done = rollup.modules_done;
+        currentProject.modules_count = rollup.modules_count;
+
+        var cached = byId(currentProject.id);
+
+        if (cached) {
+            cached.status = rollup.status;
+            cached.status_label = rollup.status_label;
+            cached.status_class = rollup.status_class;
+            cached.progress = rollup.progress;
+            cached.modules_done = rollup.modules_done;
+            cached.modules_count = rollup.modules_count;
+        }
+
+        var statusValue = detailGrid.querySelector('[data-detail-field="status"]');
+        var progressValue = detailGrid.querySelector('[data-detail-field="progress"]');
+
+        if (statusValue) {
+            statusValue.innerHTML = statusChip(rollup.status_label, rollup.status_class);
+        }
+
+        if (progressValue) {
+            progressValue.innerHTML = progressCell(rollup.progress);
+        }
+
+        if (previousStatus && previousStatus !== rollup.status) {
+            window.Omnitrack.notify('Status project: ' + rollup.status_label + '.', 'success');
+        }
+    }
+
     async function deleteModule(moduleId) {
         var confirmed = await window.Omnitrack.confirm('Hapus modul ini?', {
             title: 'Hapus modul',
@@ -365,6 +412,8 @@
         }
 
         if (currentProject) {
+            var removedStatus = currentProject.status;
+
             currentProject.modules = currentProject.modules.filter(function (module) {
                 return module.id !== moduleId;
             });
@@ -376,6 +425,8 @@
             currentProject.progress = currentProject.modules_count
                 ? Math.round((currentProject.modules_done / currentProject.modules_count) * 100)
                 : currentProject.progress;
+
+            applyProjectRollup(result.body && result.body.project, removedStatus);
 
             renderDetail();
             patchProjectRow(currentProject);
@@ -412,6 +463,8 @@
 
     async function toggleModule(moduleId, done) {
         var module = null;
+        // Captured before the write so a status change can be announced.
+        var previousStatus = currentProject ? currentProject.status : null;
 
         if (currentProject) {
             module = currentProject.modules.filter(function (item) { return item.id === moduleId; })[0];
@@ -468,15 +521,11 @@
                     : '');
         }
 
+        // The server also returns the rolled-up project, so a tick that completes
+        // the checklist moves the project to Done in the same paint.
+        applyProjectRollup(result.body && result.body.project, previousStatus);
+
         patchProjectRow(currentProject);
-
-        // Keep the "Kategori" counters honest when a project completes.
-        var project = byId(currentProject.id);
-
-        if (project) {
-            project.modules_done = currentProject.modules_done;
-            project.progress = currentProject.progress;
-        }
     }
 
     /* ----------------------------------------------------------- categories */
@@ -735,17 +784,20 @@
             ['Kategori', category
                 ? '<span class="category-tag">' + window.Omnitrack.escapeHtml(category) + '</span>'
                 : '&mdash;'],
-            ['Status', statusChip(project.status_label, project.status_class)],
+            ['Status', statusChip(project.status_label, project.status_class), 'status'],
             ['My Role', window.Omnitrack.escapeHtml(project.my_role || '&mdash;')],
             ['Department', window.Omnitrack.escapeHtml(project.department || '&mdash;')],
             ['User', window.Omnitrack.escapeHtml(project.target_user || '&mdash;')],
             ['Project Owner', window.Omnitrack.escapeHtml(project.project_owner || '&mdash;')],
-            ['Progress', progressCell(project.progress)]
+            ['Progress', progressCell(project.progress), 'progress']
         ];
 
+        // A third element marks a value that a module write can change in place,
+        // which is what applyProjectRollup repaints (see the marker lookup there).
         detailGrid.innerHTML = fields.map(function (pair) {
             return '<div><div class="detail-term">' + pair[0] + '</div>' +
-                '<div class="detail-value">' + pair[1] + '</div></div>';
+                '<div class="detail-value"' +
+                (pair[2] ? ' data-detail-field="' + pair[2] + '"' : '') + '>' + pair[1] + '</div></div>';
         }).join('');
 
         if (project.description) {
@@ -931,11 +983,9 @@
 
             currentProject.modules_count = currentProject.modules.length;
 
-            var project = byId(currentProject.id);
-
-            if (project) {
-                project.modules_count = currentProject.modules_count;
-            }
+            // Adding a module to a finished project reopens it server-side, so the
+            // row follows the same rollup the toggle path uses.
+            applyProjectRollup(result.body && result.body.project, null);
 
             renderDetail();
             patchProjectRow(currentProject);

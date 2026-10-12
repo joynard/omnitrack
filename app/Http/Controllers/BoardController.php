@@ -431,6 +431,7 @@ class BoardController extends Controller
         return response()->json([
             'status' => 'success',
             'module' => ['id' => $module->id, 'title' => $module->title],
+            'project' => $this->rollupPayload($project->fresh()),
         ], 201);
     }
 
@@ -471,18 +472,53 @@ class BoardController extends Controller
 
         $module->fill($attributes)->save();
 
+        $project = $module->project()->first();
+
         return response()->json([
             'status' => 'success',
             'module' => ['id' => $module->id, 'status' => $module->status->value],
+            'project' => $project ? $this->rollupPayload($project->fresh()) : null,
         ]);
     }
 
     public function destroyModule(ProjectModule $module): JsonResponse
     {
         $title = $module->title;
+        $project = $module->project()->first();
+
         $module->delete();
 
-        return response()->json(['status' => 'success', 'deleted_module' => $title]);
+        return response()->json([
+            'status' => 'success',
+            'deleted_module' => $title,
+            'project' => $project ? $this->rollupPayload($project->fresh()) : null,
+        ]);
+    }
+
+    /**
+     * The project fields the board must repaint after a module write.
+     *
+     * WHY it is returned with the module instead of the board being re-fetched:
+     * ticking one checkbox can flip the project's status (see
+     * Project::syncStatusFromModules), so the row would otherwise keep showing a
+     * stale chip until a reload -- which is exactly the bug this fixes. Sending
+     * six fields is cheaper than re-listing every project.
+     *
+     * @return array<string, mixed>
+     */
+    private function rollupPayload(Project $project): array
+    {
+        $modules = $project->modules;
+
+        return [
+            'id' => $project->id,
+            'status' => $project->status->value,
+            'status_label' => $project->status->label(),
+            'status_class' => $project->status->chipClass(),
+            'progress' => $project->progress(),
+            'modules_count' => $modules->count(),
+            'modules_done' => $modules->where('status', ItemStatus::DONE)->count(),
+        ];
     }
 
     /**

@@ -36,6 +36,23 @@ class ProjectModule extends Model
         ];
     }
 
+    /**
+     * Keep the parent project's status in step with its checklist.
+     *
+     * WHY here and not in the controllers: the board UI, the AI palette, the
+     * Telegram bridge and the harness API all write modules, and this is the one
+     * place every single-row write passes through.
+     *
+     * A module that MOVES between projects only fires `saved` on the destination,
+     * and mass update/delete fire nothing at all -- those callers must also call
+     * Project::syncStatusesFor() for the projects they left behind.
+     */
+    protected static function booted(): void
+    {
+        static::saved(fn (self $module) => $module->project?->syncStatusFromModules());
+        static::deleted(fn (self $module) => $module->project?->syncStatusFromModules());
+    }
+
     /** @return BelongsTo<Project, $this> */
     public function project(): BelongsTo
     {
