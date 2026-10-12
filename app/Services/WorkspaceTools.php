@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Support\ProjectFields;
+
 /**
  * OpenAI-style tool definitions for the AI command palette.
  *
@@ -235,19 +237,10 @@ class WorkspaceTools
         return self::function(
             'create_project',
             'Buat project baru, boleh langsung dengan kategori.',
-            [
-                'name' => ['type' => 'string', 'description' => 'Nama project.'],
-                'category_id' => self::id('ID kategori.'),
-                'category_name' => ['type' => 'string', 'description' => 'Nama kategori; dibuat otomatis bila belum ada.'],
-                'my_role' => ['type' => 'string'],
-                'department' => ['type' => 'string'],
-                'target_user' => ['type' => 'string'],
-                'project_owner' => ['type' => 'string'],
-                'description' => ['type' => 'string'],
-                'status' => self::statusField(),
-                'doc_link' => ['type' => 'string'],
-                'order_index' => ['type' => 'integer', 'description' => 'Posisi urutan project; default di paling bawah.'],
-            ],
+            array_merge(
+                ['name' => ['type' => 'string', 'description' => 'Nama project.']],
+                ProjectFields::schema()
+            ),
             ['name']
         );
     }
@@ -262,23 +255,20 @@ class WorkspaceTools
                     'status' => self::statusField(),
                     'category_id' => self::id('Pembatas: hanya project di kategori ini.'),
                 ]),
-                [
-                    'name' => ['type' => 'string'],
-                    // `category_id`/`category_name` keep their original meaning
-                    // -- the category to MOVE to -- because the harness API and
-                    // existing tests rely on it. The `where.category_id` above is
-                    // the scope variant.
-                    'category_id' => self::id('Pindahkan ke kategori ini.'),
-                    'category_name' => ['type' => 'string', 'description' => 'Pindahkan ke kategori bernama ini.'],
-                    'my_role' => ['type' => 'string'],
-                    'department' => ['type' => 'string'],
-                    'target_user' => ['type' => 'string'],
-                    'project_owner' => ['type' => 'string'],
-                    'description' => ['type' => 'string'],
-                    'status' => self::statusField(),
-                    'doc_link' => ['type' => 'string'],
-                    'order_index' => ['type' => 'integer', 'description' => 'Posisi urutan project.'],
-                ]
+                array_merge(
+                    ProjectFields::schema(),
+                    [
+                        'name' => ['type' => 'string'],
+                        // `category_id`/`category_name` keep their original meaning
+                        // -- the category to MOVE to -- because the harness API and
+                        // existing tests rely on it. The `where.category_id` above is
+                        // the scope variant. `order_index` is reworded because on an
+                        // update it moves a row, it does not append one.
+                        'category_id' => self::id('Pindahkan ke kategori ini.'),
+                        'category_name' => ['type' => 'string', 'description' => 'Pindahkan ke kategori bernama ini.'],
+                        'order_index' => ['type' => 'integer', 'description' => 'Posisi urutan project.'],
+                    ]
+                )
             )
         );
     }

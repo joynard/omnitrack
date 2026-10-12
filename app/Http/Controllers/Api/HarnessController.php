@@ -13,6 +13,7 @@ use App\Services\AiOrchestrator;
 use App\Services\GoogleSheetService;
 use App\Services\ObsidianVaultService;
 use App\Services\WorkspaceTools;
+use App\Support\ProjectFields;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -153,20 +154,7 @@ class HarnessController extends Controller
      */
     public function upsertProject(Request $request): JsonResponse
     {
-        $validated = $request->validate([
-            'id' => ['nullable', 'string', 'exists:projects,id'],
-            'name' => ['required_without:id', 'nullable', 'string', 'max:255'],
-            'category_id' => ['nullable', 'string', 'exists:categories,id'],
-            'category_name' => ['nullable', 'string', 'max:255'],
-            'my_role' => ['nullable', 'string', 'max:255'],
-            'department' => ['nullable', 'string', 'max:255'],
-            'target_user' => ['nullable', 'string', 'max:255'],
-            'project_owner' => ['nullable', 'string', 'max:255'],
-            'description' => ['nullable', 'string'],
-            'status' => ['nullable', 'string'],
-            'doc_link' => ['nullable', 'string', 'max:2048'],
-            'order_index' => ['nullable', 'integer'],
-        ]);
+        $validated = $request->validate(ProjectFields::upsertRules());
 
         if (filled($validated['id'] ?? null)) {
             $validated['project_id'] = $validated['id'];
@@ -182,19 +170,7 @@ class HarnessController extends Controller
      */
     public function updateProject(Request $request, Project $project): JsonResponse
     {
-        $arguments = $request->validate([
-            'name' => ['nullable', 'string', 'max:255'],
-            'category_id' => ['nullable', 'string', 'exists:categories,id'],
-            'category_name' => ['nullable', 'string', 'max:255'],
-            'my_role' => ['nullable', 'string', 'max:255'],
-            'department' => ['nullable', 'string', 'max:255'],
-            'target_user' => ['nullable', 'string', 'max:255'],
-            'project_owner' => ['nullable', 'string', 'max:255'],
-            'description' => ['nullable', 'string'],
-            'status' => ['nullable', 'string'],
-            'doc_link' => ['nullable', 'string', 'max:2048'],
-            'order_index' => ['nullable', 'integer'],
-        ]);
+        $arguments = $request->validate(ProjectFields::updateRules());
 
         $arguments['project_id'] = $project->id;
 

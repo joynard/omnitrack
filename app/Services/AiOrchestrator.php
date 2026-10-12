@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Support\ProjectFields;
+
 use App\Enums\AiActionType;
 use App\Enums\ItemPriority;
 use App\Enums\ItemStatus;
@@ -279,7 +281,7 @@ class AiOrchestrator
         $message = count($names) === 1
             ? 'Kategori "'.$names[0].'" dihapus.'
             : count($names).' kategori dihapus ('.implode(', ', array_slice($names, 0, 5))
-                .(count($names) > 5 ? ', …' : '').').';
+                .(count($names) > 5 ? ', Ã¢â‚¬Â¦' : '').').';
 
         return [
             'message' => $message
@@ -416,7 +418,7 @@ class AiOrchestrator
         $message = count($names) === 1
             ? 'Project "'.$names[0].'" dihapus'
             : $deleted.' project dihapus ('.implode(', ', array_slice($names, 0, 5))
-                .(count($names) > 5 ? ', …' : '').')';
+                .(count($names) > 5 ? ', Ã¢â‚¬Â¦' : '').')';
 
         return [
             'message' => $message.($modules > 0 ? ' beserta '.$modules.' modulnya' : '').'.',
@@ -620,7 +622,7 @@ class AiOrchestrator
         $message = count($titles) === 1
             ? 'Modul "'.$titles[0].'" dihapus.'
             : $deleted.' modul dihapus ('.implode(', ', array_slice($titles, 0, 5))
-                .(count($titles) > 5 ? ', …' : '').').';
+                .(count($titles) > 5 ? ', Ã¢â‚¬Â¦' : '').').';
 
         return [
             'message' => $message,
@@ -814,7 +816,7 @@ class AiOrchestrator
         $message = count($titles) === 1
             ? 'Task "'.$titles[0].'" dihapus.'
             : $deleted.' task dihapus ('.implode(', ', array_slice($titles, 0, 5))
-                .(count($titles) > 5 ? ', …' : '').').';
+                .(count($titles) > 5 ? ', Ã¢â‚¬Â¦' : '').').';
 
         return [
             'message' => $message,
@@ -1088,7 +1090,7 @@ class AiOrchestrator
     {
         $attributes = [];
 
-        foreach (['my_role', 'department', 'target_user', 'project_owner', 'description', 'doc_link'] as $field) {
+        foreach (ProjectFields::MAPPED as $field) {
             if (array_key_exists($field, $arguments) && $arguments[$field] !== null) {
                 $attributes[$field] = trim((string) $arguments[$field]);
             }

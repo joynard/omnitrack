@@ -11,6 +11,7 @@ use App\Models\ProjectModule;
 use App\Models\Task;
 use App\Services\AiOrchestrator;
 use App\Services\GoogleSheetService;
+use App\Support\ProjectFields;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -161,18 +162,8 @@ class BoardController extends Controller
      */
     public function updateProject(Request $request, Project $project): JsonResponse
     {
-        $validated = $request->validate([
-            'category_id' => ['nullable', 'string', 'exists:categories,id'],
-            'name' => ['nullable', 'string', 'max:255'],
-            'status' => ['nullable', 'string'],
-            'my_role' => ['nullable', 'string', 'max:255'],
-            'department' => ['nullable', 'string', 'max:255'],
-            'target_user' => ['nullable', 'string', 'max:255'],
-            'project_owner' => ['nullable', 'string', 'max:255'],
-            'description' => ['nullable', 'string'],
-            'doc_link' => ['nullable', 'string', 'max:2048'],
-            'order_index' => ['nullable', 'integer'],
-        ]);
+        // The board has no "create the category by name" path, hence the flag.
+        $validated = $request->validate(ProjectFields::updateRules(withCategoryName: false));
 
         $attributes = [];
 
@@ -180,7 +171,7 @@ class BoardController extends Controller
             $attributes['category_id'] = $validated['category_id'];
         }
 
-        foreach (['name', 'my_role', 'department', 'target_user', 'project_owner', 'description', 'doc_link'] as $field) {
+        foreach (array_merge(['name'], ProjectFields::MAPPED) as $field) {
             if (filled($validated[$field] ?? null)) {
                 $attributes[$field] = trim((string) $validated[$field]);
             }
