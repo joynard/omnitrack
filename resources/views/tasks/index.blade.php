@@ -57,20 +57,17 @@
             <h2>Daftar Task</h2>
             <div class="head-actions">
                 <span class="card-note hide-mobile">Tarik baris untuk mengubah urutan.</span>
-                <label class="field" style="margin-bottom:0">
-                    <span class="field-label">Cari</span>
-                    <input class="input input-sm" type="search" id="task-search"
-                           placeholder="judul, status…" autocomplete="off">
-                </label>
-                <label class="field" style="margin-bottom:0">
-                    <span class="field-label">Filter status</span>
-                    <select class="select select-sm" id="task-filter">
-                        <option value="">Semua</option>
-                        <option value="pending">Pending</option>
-                        <option value="in_progress">In Progress</option>
-                        <option value="done">Done</option>
-                    </select>
-                </label>
+                {{-- Bare controls: a .field label would stack a second line into this
+                     row and drop the controls below the heading's baseline. The
+                     select names itself through its first option. --}}
+                <input class="input input-sm" type="search" id="task-search"
+                       aria-label="Cari task" placeholder="judul, status…" autocomplete="off">
+                <select class="select select-sm" id="task-filter" aria-label="Filter status">
+                    <option value="">Semua status</option>
+                    <option value="pending">Pending</option>
+                    <option value="in_progress">In Progress</option>
+                    <option value="done">Done</option>
+                </select>
             </div>
         </div>
 

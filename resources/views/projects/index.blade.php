@@ -124,11 +124,12 @@
             <h2 id="projects-heading">Semua Project</h2>
             <div class="head-actions">
                 <span class="card-note hide-mobile">Tarik baris untuk mengubah urutan.</span>
-                <label class="field" style="margin-bottom:0">
-                    <span class="field-label">Cari</span>
-                    <input class="input input-sm" type="search" id="project-search"
-                           placeholder="nama, role, owner…" autocomplete="off">
-                </label>
+                {{-- Bare control, no visible label: a .field wrapper stacks a label
+                     above the input, which made this block two lines tall and pushed
+                     the input below the heading's baseline. aria-label keeps it named
+                     for assistive tech, and the placeholder does the visible work. --}}
+                <input class="input input-sm" type="search" id="project-search"
+                       aria-label="Cari project" placeholder="nama, role, owner…" autocomplete="off">
             </div>
         </div>
 
