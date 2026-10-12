@@ -178,4 +178,31 @@ class GoogleSheetServiceTest extends TestCase
         $this->assertSame('Current: * Rekap order CA', $project->description);
         $this->assertSame('https://example.test/ab', $project->doc_link);
     }
+
+    public function test_a_done_row_does_not_override_an_open_checklist(): void
+    {
+        $source = SheetSource::factory()->create();
+        $project = Project::factory()->create(['name' => 'Sheet Driven']);
+        ProjectModule::factory()->create(['project_id' => $project->id, 'title' => 'Masih jalan', 'status' => 'in_progress']);
+
+        app(GoogleSheetService::class)->persistRows($source, [
+            ['Sheet Driven', '', '', '', '', '', 'Selesai', ''],
+        ]);
+
+        // The sheet says done, the checklist disagrees, and the checklist wins for a
+        // project that has modules.
+        $this->assertSame('in_progress', $project->fresh()->status->value);
+    }
+
+    public function test_a_done_row_stands_for_a_project_without_modules(): void
+    {
+        $source = SheetSource::factory()->create();
+
+        app(GoogleSheetService::class)->persistRows($source, [
+            ['No Checklist Yet', '', '', '', '', '', 'Selesai', ''],
+        ]);
+
+        // No modules means no opinion, so the sheet's status survives.
+        $this->assertSame('done', Project::query()->firstOrFail()->status->value);
+    }
 }

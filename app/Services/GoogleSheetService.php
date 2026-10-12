@@ -261,6 +261,19 @@ class GoogleSheetService
             ]
         );
 
+        // MODULE ROLLUP: the sheet carries its own status column, and a project whose
+        // checklist still has open modules must not claim "done" just because the sheet
+        // says so. Project::syncStatusFromModules only speaks for projects that HAVE
+        // modules, so a sheet-only project keeps the sheet's status while a project with
+        // a checklist keeps the checklist's -- exactly the rule the board already
+        // follows when a checkbox is ticked.
+        $touched = Project::query()
+            ->where('sheet_source_id', $source->id)
+            ->whereIn('sheet_row_index', array_keys($hashIndex))
+            ->pluck('id');
+
+        Project::syncStatusesFor($touched->all());
+
         $source->forceFill(['last_synced_at' => now()])->save();
 
         Log::info('Google Sheet ingestion complete.', [
