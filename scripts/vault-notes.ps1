@@ -52,6 +52,40 @@ $web = 'http://127.0.0.1:8080'
 $stamp = (Get-Date).ToString('yyyy-MM-dd')
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 
+# ------------------------------------------------------------ keep cache ------
+# A durable copy of every keep block this run reads.
+#
+# WHY on disk: the run DELETES every generated note during cleanup and writes them
+# back afterwards, so hand-written prose exists only in memory in between. A crash
+# in that window destroyed it once for real -- a bug at the focus section killed the
+# run after Home.md was deleted, and its keep block (three links) was gone with no
+# copy anywhere. Saving the cache before anything is written back removes that
+# window: the next run restores prose for a file that no longer exists.
+$keepStorePath = Join-Path $env:USERPROFILE '.dsh\cache\omnitrack-keep.json'
+$keepStore = @{}
+
+if (Test-Path -LiteralPath $keepStorePath) {
+    try {
+        $storedKeeps = Get-Content -LiteralPath $keepStorePath -Raw | ConvertFrom-Json
+        foreach ($property in $storedKeeps.PSObject.Properties) {
+            $bag = @{}
+            foreach ($heading in $property.Value.PSObject.Properties) { $bag[$heading.Name] = [string]$heading.Value }
+            $keepStore[$property.Name] = $bag
+        }
+    } catch {
+        Write-Output "cache keep tidak terbaca, mulai dari kosong: $($_.Exception.Message)"
+    }
+}
+
+function Save-KeepStore {
+    if ($keepStore.Count -eq 0) { return }
+
+    $dir = Split-Path -Parent $keepStorePath
+    if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
+
+    [System.IO.File]::WriteAllText($keepStorePath, ($keepStore | ConvertTo-Json -Depth 6), $utf8)
+}
+
 $vault = (Select-String -Path $envPath -Pattern '^OBSIDIAN_VAULT_HOST_PATH=(.+)$').Matches.Groups[1].Value.Trim().Trim('"')
 # .env writes the path with forward slashes; every path this script builds or
 # compares must use the same separators as Get-ChildItem's FullName.
@@ -138,6 +172,20 @@ function Get-Modules([string]$projectId) {
     return ,@()
 }
 
+# WHY this exists next to Get-Modules: piping that wrapped shape into Where-Object
+# collapsed a single module to a scalar, and a scalar PSCustomObject has no .Count,
+# so "- N modul terbuka" printed an empty number for every project with exactly one
+# open module. Unwrapping one level first gives callers a plain array they can pipe
+# and count normally, for zero, one or many modules.
+function Get-ModuleList([string]$projectId) {
+    $list = New-Object System.Collections.Generic.List[object]
+
+    foreach ($item in (Get-Modules $projectId)) {
+        foreach ($module in @($item)) { $list.Add($module) }
+    }
+
+    return $list.ToArray()
+}
 # ------------------------------------------------------------ layout cache ---
 # WHY a cache: the folder inventory needs a recursive walk of every project, and
 # those walks are the entire cost of a run (tens of thousands of files across
@@ -151,6 +199,40 @@ $layoutStore = @{}
 $cacheHits = 0
 $cacheMisses = 0
 $utf8 = New-Object System.Text.UTF8Encoding($false)
+
+# ------------------------------------------------------------ keep cache ------
+# A durable copy of every keep block this run reads.
+#
+# WHY on disk: the run DELETES every generated note during cleanup and writes them
+# back afterwards, so hand-written prose exists only in memory in between. A crash
+# in that window destroyed it once for real -- a bug at the focus section killed the
+# run after Home.md was deleted, and its keep block (three links) was gone with no
+# copy anywhere. Saving the cache before anything is written back removes that
+# window: the next run restores prose for a file that no longer exists.
+$keepStorePath = Join-Path $env:USERPROFILE '.dsh\cache\omnitrack-keep.json'
+$keepStore = @{}
+
+if (Test-Path -LiteralPath $keepStorePath) {
+    try {
+        $storedKeeps = Get-Content -LiteralPath $keepStorePath -Raw | ConvertFrom-Json
+        foreach ($property in $storedKeeps.PSObject.Properties) {
+            $bag = @{}
+            foreach ($heading in $property.Value.PSObject.Properties) { $bag[$heading.Name] = [string]$heading.Value }
+            $keepStore[$property.Name] = $bag
+        }
+    } catch {
+        Write-Output "cache keep tidak terbaca, mulai dari kosong: $($_.Exception.Message)"
+    }
+}
+
+function Save-KeepStore {
+    if ($keepStore.Count -eq 0) { return }
+
+    $dir = Split-Path -Parent $keepStorePath
+    if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
+
+    [System.IO.File]::WriteAllText($keepStorePath, ($keepStore | ConvertTo-Json -Depth 6), $utf8)
+}
 
 if (-not $Fresh -and (Test-Path -LiteralPath $cachePath)) {
     try {
@@ -250,7 +332,12 @@ function Get-KeptSections([string]$notePath) {
     # every intermediate heading, so the block would be attributed to the FIRST
     # ## in the file instead of the one directly above it -- which silently moved
     # every hand-written paragraph into the wrong section.
-    $found = [regex]::Matches($raw, '(?ms)^##[ \t]+([^\r\n]+)[ \t]*\r?\n(?:(?!^##[ \t])[\s\S])*?<!--\s*omnitrack:keep\s*-->(.*?)<!--\s*/omnitrack:keep\s*-->')
+    # WHY the markers must stand alone on their line: Home's own prose QUOTES the
+    # markers as inline code. A pattern that accepted them anywhere treated that
+    # quoted pair as a real block, swallowed the genuine block under `## Catatan`
+    # into a 421-character body attributed to another heading, and silently dropped
+    # it -- Home's keep content was destroyed on EVERY run, not just after a crash.
+    $found = [regex]::Matches($raw, '(?ms)^##[ \t]+([^\r\n]+)[ \t]*\r?\n(?:(?!^##[ \t])[\s\S])*?^[ \t]*<!--\s*omnitrack:keep\s*-->[ \t]*\r?\n(.*?)^[ \t]*<!--\s*/omnitrack:keep\s*-->[ \t]*(?:\r?\n|$)')
 
     foreach ($hit in $found) {
         $kept[$hit.Groups[1].Value.Trim()] = $hit.Groups[2].Value.Trim()
@@ -267,7 +354,17 @@ function Get-KeptSectionsFrom([string]$notePath, $cache) {
     $key = Get-NoteKey $notePath
     if ($cache.ContainsKey($key)) { return $cache[$key] }
 
-    return Get-KeptSections $notePath
+    if (Test-Path -LiteralPath $notePath) {
+        $kept = Get-KeptSections $notePath
+        if ($kept.Count -gt 0) { $keepStore[$key] = $kept }
+        return $kept
+    }
+
+    # The file is gone: a stale note, or a previous run died after deleting it.
+    # The durable cache is then the only copy of the prose left.
+    if ($keepStore.ContainsKey($key)) { return $keepStore[$key] }
+
+    return @{}
 }
 
 function Add-KeepSection($lines, [string]$title, $kept, [string]$placeholder) {
@@ -368,9 +465,15 @@ foreach ($file in $(if ($Only.Count -eq 0) { Get-ChildItem -LiteralPath $vault -
 # back empty.
 $keptCache = @{}
 foreach ($path in $stale) {
-    $keptCache[(Get-NoteKey $path)] = Get-KeptSections $path
+    $key = Get-NoteKey $path
+    $keptCache[$key] = Get-KeptSections $path
+    $keepStore[$key] = $keptCache[$key]
     Remove-Item -LiteralPath $path -Force
 }
+
+# Written BEFORE the first note is generated, on purpose: from here on the prose is
+# recoverable even if this process dies mid-run (see the keep cache block above).
+Save-KeepStore
 
 foreach ($dir in $(if ($Only.Count -eq 0) { Get-ChildItem -LiteralPath $vault -Recurse -Directory -Force |
                   Where-Object { $_.Name -notin @('.obsidian', 'Templates') } |
@@ -523,7 +626,7 @@ foreach ($group in ($projects | Group-Object categoryName | Sort-Object { $categ
     $done = @($members | Where-Object status -eq 'done').Count
     $running = @($members | Where-Object status -eq 'in_progress').Count
     $pending = @($members | Where-Object status -eq 'pending').Count
-    $openModules = @($members | ForEach-Object { (Get-Modules $_.id) | Where-Object { $_.status -ne 'done' } })
+    $openModules = @($members | ForEach-Object { Get-ModuleList $_.id | Where-Object { $_.status -ne 'done' } })
 
     $techCounts = @{}
     foreach ($member in $members) {
@@ -580,7 +683,7 @@ foreach ($group in ($projects | Group-Object categoryName | Sort-Object { $categ
         $lines.Add('## Yang masih terbuka')
         $lines.Add('')
         foreach ($member in $members) {
-            $open = (Get-Modules $member.id) | Where-Object { $_.status -ne 'done' }
+            $open = @(Get-ModuleList $member.id | Where-Object { $_.status -ne 'done' })
             if ($open.Count -eq 0) { continue }
             $lines.Add(('- [[{0}|{1}]]' -f $member.notePath, $member.name))
             foreach ($module in $open) {
@@ -626,7 +729,7 @@ foreach ($group in ($projects | Group-Object categoryName | Sort-Object { $categ
     $groupDone = @($group.Group | Where-Object status -eq 'done').Count
     $groupRunning = @($group.Group | Where-Object status -eq 'in_progress').Count
     $groupPending = @($group.Group | Where-Object status -eq 'pending').Count
-    $groupModules = (@($group.Group | ForEach-Object { (Get-Modules $_.id).Count }) | Measure-Object -Sum).Sum
+    $groupModules = (@($group.Group | ForEach-Object { (Get-ModuleList $_.id).Count }) | Measure-Object -Sum).Sum
     $moc.Add(('| [[Areas/{0}\|{0}]] | {1} | {2} | {3} | {4} | {5} |' -f $group.Name, $group.Count, $groupDone, $groupRunning, $groupPending, $groupModules))
 }
 $moc.Add('')
@@ -736,7 +839,7 @@ $running = @($projects | Where-Object status -eq 'in_progress' | Sort-Object _ca
 $focus.Add(('## Project jalan ({0})' -f $running.Count))
 $focus.Add('')
 foreach ($project in $running) {
-    $open = (Get-Modules $project.id) | Where-Object { $_.status -ne 'done' }
+    $open = @(Get-ModuleList $project.id | Where-Object { $_.status -ne 'done' })
     $focus.Add(('- [[{0}|{1}]] - {2} modul terbuka' -f $project.notePath, $project.name, $open.Count))
 }
 $focus.Add('')
@@ -744,7 +847,7 @@ $focus.Add('')
 $focus.Add('## Modul terbuka')
 $focus.Add('')
 foreach ($project in $running) {
-    $open = (Get-Modules $project.id) | Where-Object { $_.status -ne 'done' }
+    $open = @(Get-ModuleList $project.id | Where-Object { $_.status -ne 'done' })
     if ($open.Count -eq 0) { continue }
     $focus.Add(('- [[{0}|{1}]]' -f $project.notePath, $project.name))
     foreach ($module in $open) {
@@ -753,7 +856,7 @@ foreach ($project in $running) {
 }
 $focus.Add('')
 
-$unbroken = @($projects | Where-Object { $_.status -ne 'done' -and (Get-Modules $_.id).Count -eq 0 } | Sort-Object _cat, order_index)
+$unbroken = @($projects | Where-Object { $_.status -ne 'done' -and (Get-ModuleList $_.id).Count -eq 0 } | Sort-Object _cat, order_index)
 if ($unbroken.Count -gt 0) {
     $focus.Add('## Belum punya checklist')
     $focus.Add('')
@@ -830,7 +933,7 @@ if ($weekModules.Count -eq 0) {
     $digest.Add('')
 } else {
     foreach ($project in $projects) {
-        $moved = (Get-Modules $project.id) | Where-Object { $weekModules.id -contains $_.id }
+        $moved = @(Get-ModuleList $project.id | Where-Object { $weekModules.id -contains $_.id })
         if ($moved.Count -eq 0) { continue }
         $digest.Add(('- [[{0}|{1}]]' -f $project.notePath, $project.name))
         foreach ($module in $moved) { $digest.Add(('    - {0} ({1})' -f $module.title, $statusLabel[$module.status])) }
@@ -963,4 +1066,5 @@ Write-Output ('area notes    : {0}' -f $areaWritten)
 Write-Output ('other notes   : Projects MOC, Home, Welcome, Rencana/Fokus Saat Ini, Ide/Ide, Journal/Rekap/{0}' -f $week.Key)
 Write-Output ('templates     : Templates/Harian.md, Templates/Mingguan.md')
 Save-LayoutCache
+Save-KeepStore
 Write-Output ('layout cache  : {0} dipakai ulang, {1} dipindai' -f $cacheHits, $cacheMisses)
