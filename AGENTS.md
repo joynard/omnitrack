@@ -274,6 +274,7 @@ Alexander's personal knowledge vault is read by this app, never written by it:
 | UI | `http://localhost:8080/vault` (nav: "Second Brain") |
 | Agent surface | `GET /api/harness/vault`, `/vault/notes`, `/vault/search`, `/vault/note?path=` |
 | Tests | `tests/Feature/ObsidianVaultTest.php` (throwaway vault in the system temp dir) |
+| Note generator | `scripts/vault-notes.ps1` -- regenerates the vault's `Projects/` tree from this app; only notes carrying `omnitrack_id:` are replaced, so a hand-written `## Catatan` section survives |
 
 Nothing about the vault is stored in Postgres: a note is a file, and a second copy
 would only be a second thing to keep in sync. The service scans on demand

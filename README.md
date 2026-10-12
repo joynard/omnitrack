@@ -166,6 +166,11 @@ there is no vault to leak on a server. The UI lives at `/vault` (nav: "Second
 Brain"); the agent surface is `/api/harness/vault*`; notes are read from disk on
 each request, so nothing needs migrating or re-indexing.
 
+To fill the vault from Omnitrack (one note per project, grouped by category, plus
+a `Projects MOC` index), run `./scripts/vault-notes.ps1`. It is safe to re-run:
+only notes carrying `omnitrack_id:` are rewritten, so the hand-written `## Catatan`
+section of every note survives.
+
 ---
 
 ## Google Sheet column mapping
