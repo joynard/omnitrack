@@ -99,6 +99,12 @@ Keep `vendor/` and `node_modules/` in named volumes, never bind-mounted: a
   / `->delete()` fire NOTHING, so every bulk path must call
   `Project::syncStatusesFor($projectIds)` itself, with the ids captured BEFORE the
   write. Forgetting it is silent: the checklist moves, the status does not.
+- **A code change to a job does not reach the running queue worker.** The worker is
+  a long-lived process holding the old class definitions, so a fixed
+  `SyncGoogleSheetJob` path keeps behaving like the old one until it is restarted:
+  `docker exec omnitrack-app pkill -f 'artisan queue:work'` and supervisord brings it
+  back within seconds. Symptom seen once: the sheet ingest kept writing a `done`
+  status over an open checklist after the fix that stopped it.
 - **Never export `COMPOSE_PROJECT_NAME`.** An exported value overrides `.env` and
   silently creates a second, empty set of volumes.
 - **`--profile test` starts that profile's services.** Use profiles for `down`,
