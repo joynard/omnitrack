@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Project;
+use App\Models\ProjectModule;
 use App\Models\SheetSource;
 use App\Services\GoogleSheetService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -119,5 +120,62 @@ class GoogleSheetServiceTest extends TestCase
         // The manual row has a null sheet_source_id, so it must be untouched.
         $this->assertDatabaseHas('projects', ['id' => $manual->id, 'name' => 'Manual Project']);
         $this->assertDatabaseCount('projects', 2);
+    }
+
+    public function test_a_sheet_row_adopts_a_matching_manual_project(): void
+    {
+        $source = SheetSource::factory()->create();
+
+        // The same work exists locally with modules attached, and the sheet spells the
+        // name with extra spaces and a line break.
+        $manual = Project::factory()->create(['name' => 'Penjualan Barang Claim']);
+        ProjectModule::factory()->create(['project_id' => $manual->id, 'title' => 'Fullstack', 'status' => 'pending']);
+
+        $result = app(GoogleSheetService::class)->persistRows($source, [
+            ["Penjualan  Barang\nClaim", 'Dev', 'PT SPIL', 'User', 'Owner', 'Improve legacy', 'WIP', 'https://example.test/x'],
+        ]);
+
+        $this->assertSame(0, $result['created'], 'adoption must not create a second project');
+        $this->assertSame(1, $result['linked']);
+
+        $fresh = $manual->fresh();
+
+        $this->assertSame($manual->id, $fresh->id);
+        $this->assertSame($source->id, $fresh->sheet_source_id);
+        $this->assertSame(2, $fresh->sheet_row_index);
+        $this->assertSame('Penjualan Barang Claim', $fresh->name, 'the sheet name is normalized');
+        $this->assertSame('Dev', $fresh->my_role);
+        $this->assertDatabaseCount('projects', 1);
+        $this->assertDatabaseCount('project_modules', 1);
+    }
+
+    public function test_a_repeated_sheet_name_is_only_adopted_once(): void
+    {
+        $source = SheetSource::factory()->create();
+        Project::factory()->create(['name' => 'WLA']);
+
+        $result = app(GoogleSheetService::class)->persistRows($source, [
+            ['WLA', '', '', '', '', 'first', 'pending', ''],
+            ['WLA', '', '', '', '', 'second', 'pending', ''],
+        ]);
+
+        $this->assertSame(1, $result['linked']);
+        $this->assertSame(1, $result['created'], 'the second row has no project left to adopt');
+        $this->assertDatabaseCount('projects', 2);
+    }
+
+    public function test_cells_collapse_newlines_and_links_lose_whitespace(): void
+    {
+        $source = SheetSource::factory()->create();
+
+        app(GoogleSheetService::class)->persistRows($source, [
+            ["Percepatan Sandar\r\nKapal di Kuala\nTanjung", '', '', '', '', "Current:\r* Rekap order CA", 'pending', "https://example.test/a\n b"],
+        ]);
+
+        $project = Project::query()->firstOrFail();
+
+        $this->assertSame('Percepatan Sandar Kapal di Kuala Tanjung', $project->name);
+        $this->assertSame('Current: * Rekap order CA', $project->description);
+        $this->assertSame('https://example.test/ab', $project->doc_link);
     }
 }

@@ -120,6 +120,11 @@ class HarnessApiTest extends TestCase
 
     public function test_sync_endpoint_queues_job_even_without_google_credentials(): void
     {
+        // Belt and braces next to the phpunit.xml override: this test is about the
+        // degraded path, so it must never see whatever credentials the working copy
+        // happens to carry.
+        config()->set('services.google.credentials_path', storage_path('app/google/definitely-missing.json'));
+
         $this->withToken('test-harness-token')
             ->postJson('/api/harness/sync')
             ->assertOk()

@@ -57,7 +57,7 @@ class GoogleSheetService
     /**
      * Run a full ingestion pass.
      *
-     * @return array{status: string, message: string, created: int, updated: int, skipped: int, rows: int}
+     * @return array{status: string, message: string, created: int, updated: int, linked: int, skipped: int, rows: int}
      */
     public function sync(?SheetSource $source = null): array
     {
@@ -136,14 +136,30 @@ class GoogleSheetService
     {
         $payload = [];
         $hashIndex = [];
+        $nameByRow = [];
         $skipped = 0;
+
+        // WHY the adoption map: the reference key is (sheet_source_id, sheet_row_index),
+        // so a sheet row for work that already exists locally under a hand-made name
+        // created a twin every time. Matching on the normalized name lets the sheet
+        // ADOPT the existing project instead, so its modules, tasks and vault note stay
+        // attached to the row that keeps updating it.
+        $adoptable = [];
+
+        foreach (Project::query()->whereNull('sheet_source_id')->get(['id', 'name']) as $candidate) {
+            $key = self::nameKey($candidate->name);
+
+            if ($key !== '' && ! isset($adoptable[$key])) {
+                $adoptable[$key] = $candidate->id;
+            }
+        }
 
         foreach ($rows as $offset => $row) {
             $sheetRow = $offset + 2;
-            $name = trim((string) ($row[0] ?? ''));
+            $name = $this->cell($row[0] ?? null);
 
             // A project without a name cannot be represented or matched.
-            if ($name === '') {
+            if ($name === null) {
                 $skipped++;
 
                 continue;
@@ -154,19 +170,20 @@ class GoogleSheetService
             $rowHash = hash('sha256', json_encode(array_values($row), JSON_UNESCAPED_UNICODE));
 
             $hashIndex[$sheetRow] = $rowHash;
+            $nameByRow[$sheetRow] = $name;
 
             $payload[] = [
                 'sheet_source_id' => $source->id,
                 'sheet_row_index' => $sheetRow,
                 'name' => $name,
-                'my_role' => $this->nullable($row[1] ?? null),
-                'department' => $this->nullable($row[2] ?? null),
-                'target_user' => $this->nullable($row[3] ?? null),
-                'project_owner' => $this->nullable($row[4] ?? null),
-                'description' => $this->nullable($row[5] ?? null),
+                'my_role' => $this->cell($row[1] ?? null),
+                'department' => $this->cell($row[2] ?? null),
+                'target_user' => $this->cell($row[3] ?? null),
+                'project_owner' => $this->cell($row[4] ?? null),
+                'description' => $this->cell($row[5] ?? null),
                 // Column 6 may be Indonesian ("Selesai") or English ("Done").
                 'status' => ItemStatus::normalize($row[6] ?? null)->value,
-                'doc_link' => $this->nullable($row[7] ?? null),
+                'doc_link' => $this->link($row[7] ?? null),
                 'row_hash' => $rowHash,
                 'created_at' => now(),
                 'updated_at' => now(),
@@ -185,10 +202,48 @@ class GoogleSheetService
             ->whereIn('sheet_row_index', array_keys($hashIndex))
             ->pluck('row_hash', 'sheet_row_index');
 
+        // Link the rows the sheet has never seen to a hand-made project of the same
+        // name, BEFORE the upsert, so the upsert finds the pair already present and
+        // updates that project rather than inserting a second one.
+        $linked = [];
+
+        foreach ($hashIndex as $sheetRow => $hash) {
+            if ($existing->has($sheetRow)) {
+                continue;
+            }
+
+            $key = self::nameKey($nameByRow[$sheetRow] ?? null);
+
+            if ($key === '' || ! isset($adoptable[$key])) {
+                continue;
+            }
+
+            $project = Project::query()->find($adoptable[$key]);
+
+            if ($project === null) {
+                continue;
+            }
+
+            $project->forceFill([
+                'sheet_source_id' => $source->id,
+                'sheet_row_index' => $sheetRow,
+                'row_hash' => $hash,
+            ])->save();
+
+            // A name can only be adopted once, even when the sheet repeats it.
+            unset($adoptable[$key]);
+
+            $linked[$sheetRow] = $project->id;
+        }
+
         $created = 0;
         $updated = 0;
 
         foreach ($hashIndex as $sheetRow => $hash) {
+            if (isset($linked[$sheetRow])) {
+                continue;
+            }
+
             if (! $existing->has($sheetRow)) {
                 $created++;
             } elseif ($existing[$sheetRow] !== $hash) {
@@ -213,6 +268,7 @@ class GoogleSheetService
             'rows' => count($rows),
             'created' => $created,
             'updated' => $updated,
+            'linked' => count($linked),
             'skipped' => $skipped,
         ]);
 
@@ -221,29 +277,57 @@ class GoogleSheetService
             sprintf('Synced %d row(s).', count($payload)),
             created: $created,
             updated: $updated,
+            linked: count($linked),
             skipped: $skipped,
             rows: count($rows),
         );
     }
 
-    private function nullable(mixed $value): ?string
+    /**
+     * One sheet cell with its whitespace collapsed.
+     *
+     * WHY: cells arrive with literal newlines and \r. A project name came in as three
+     * lines and a description as "Current:\r* Rekap order CA ...". Collapsing them is
+     * what makes a sheet name matchable against a hand-made project name.
+     */
+    private function cell(mixed $value): ?string
     {
-        $clean = trim((string) $value);
+        $clean = trim((string) preg_replace('/\s+/u', ' ', (string) $value));
+
+        return $clean === '' ? null : $clean;
+    }
+
+    /** A link never contains whitespace, so every whitespace character is dropped. */
+    private function link(mixed $value): ?string
+    {
+        $clean = (string) preg_replace('/\s+/u', '', (string) $value);
 
         return $clean === '' ? null : $clean;
     }
 
     /**
-     * @return array{status: string, message: string, created: int, updated: int, skipped: int, rows: int}
+     * Normalized name used to match a sheet row against a hand-made project.
+     *
+     * Lower-cased and whitespace-collapsed, because the sheet and the board spell the
+     * same work slightly differently ("Data  All Customers" vs "data all customers").
+     */
+    private static function nameKey(?string $name): string
+    {
+        return mb_strtolower(trim((string) preg_replace('/\s+/u', ' ', (string) $name)));
+    }
+
+    /**
+     * @return array{status: string, message: string, created: int, updated: int, linked: int, skipped: int, rows: int}
      */
     private function result(
         string $status,
         string $message,
         int $created = 0,
         int $updated = 0,
+        int $linked = 0,
         int $skipped = 0,
         int $rows = 0,
     ): array {
-        return compact('status', 'message', 'created', 'updated', 'skipped', 'rows');
+        return compact('status', 'message', 'created', 'updated', 'linked', 'skipped', 'rows');
     }
 }
