@@ -134,7 +134,7 @@ class ObsidianVaultService
         $matched = 0;
 
         foreach ($this->scan() as $note) {
-            $absolute = $this->absolutePath($note['path']);
+            $absolute = $this->resolve($note['path']);
 
             if ($absolute === null) {
                 continue;
@@ -334,7 +334,7 @@ class ObsidianVaultService
                 continue;
             }
 
-            $absolute = $this->absolutePath($note['path']);
+            $absolute = $this->resolve($note['path']);
 
             if ($absolute === null) {
                 continue;
@@ -529,10 +529,6 @@ class ObsidianVaultService
         return $head;
     }
 
-    private function absolutePath(string $relative): ?string
-    {
-        return $this->resolve($relative);
-    }
 
     private function relativePath(string $absolute): string
     {

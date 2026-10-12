@@ -74,42 +74,33 @@ class Project extends Model
     }
 
     /**
-     * The status a set of module statuses implies, or null when there are none.
+     * True when every module in the set is done, false when any is not.
      *
-     * All-done wins; a single open module means the set is unfinished; an untouched
-     * checklist is pending. Which of those three outcomes is actually written back
-     * is decided by syncStatusFromModules() below -- this method only derives.
+     * WHY a boolean and not the three-way status it used to derive: the caller
+     * only ever asks whether the checklist is finished. "Some pending" and "some
+     * in progress" are handled identically (the project may not claim to be done),
+     * so deriving a PENDING value here was a distinction nothing read -- the
+     * branch was unreachable in effect.
      *
-     * Null (no modules) means "no opinion": an empty project keeps whatever the
-     * user or the spreadsheet put there.
+     * The no-module case is false, never true: an empty set is "no opinion", and
+     * the caller must not read it as "all done".
      *
      * @param  iterable<ItemStatus|string>  $statuses
      */
-    public static function rollupStatusFromModules(iterable $statuses): ?ItemStatus
+    public static function allModulesDone(iterable $statuses): bool
     {
-        $values = [];
+        $seen = 0;
 
         foreach ($statuses as $status) {
-            $values[] = $status instanceof ItemStatus ? $status->value : (string) $status;
-        }
+            $seen++;
+            $value = $status instanceof ItemStatus ? $status->value : (string) $status;
 
-        if ($values === []) {
-            return null;
-        }
-
-        $done = count(array_filter($values, fn (string $value) => $value === ItemStatus::DONE->value));
-
-        if ($done === count($values)) {
-            return ItemStatus::DONE;
-        }
-
-        foreach ($values as $value) {
-            if ($value === ItemStatus::DONE->value || $value === ItemStatus::IN_PROGRESS->value) {
-                return ItemStatus::IN_PROGRESS;
+            if ($value !== ItemStatus::DONE->value) {
+                return false;
             }
         }
 
-        return ItemStatus::PENDING;
+        return $seen > 0;
     }
 
     /**
@@ -133,17 +124,16 @@ class Project extends Model
     {
         // A fresh query rather than $this->modules: the caller is usually a module
         // event handler, where the loaded relation still holds the pre-save row.
-        $next = static::rollupStatusFromModules($this->modules()->pluck('status')->all());
+        $statuses = $this->modules()->pluck('status')->all();
 
-        if ($next === null) {
+        // No modules means no opinion: the status stays whatever it was set to.
+        if ($statuses === []) {
             return false;
         }
 
-        $target = match (true) {
-            $next === ItemStatus::DONE => ItemStatus::DONE,
-            $this->status === ItemStatus::DONE => ItemStatus::IN_PROGRESS,
-            default => $this->status,
-        };
+        $target = static::allModulesDone($statuses)
+            ? ItemStatus::DONE
+            : ($this->status === ItemStatus::DONE ? ItemStatus::IN_PROGRESS : $this->status);
 
         if ($this->status === $target) {
             return false;
